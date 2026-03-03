@@ -1,0 +1,25 @@
+name: Auto-open PR on push
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+jobs:
+  open-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          base: main
+          title: "${{ github.ref_name }}"
+          body: |
+            Automated PR from push to `${{ github.ref_name }}`.
+          draft: false
