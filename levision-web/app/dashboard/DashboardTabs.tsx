@@ -1,18 +1,492 @@
 'use client'
 
 import { useState } from 'react'
-import type { Profile } from '@/lib/types'
+import type { Profile, Game } from '@/lib/types'
 
-type Tab = 'upload' | 'search' | 'live'
+type Tab = 'upload' | 'search' | 'live' | 'past'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'upload', label: 'Upload Footage' },
   { id: 'search', label: 'Search' },
   { id: 'live',   label: 'Live Games' },
+  { id: 'past',   label: 'Past Games' }
+]
+
+// Mock past games data
+const MOCK_GAMES: Game[] = [
+  {
+    id: '1',
+    homeTeam: 'Lakers',
+    awayTeam: 'Warriors',
+    homeScore: 115,
+    awayScore: 110,
+    date: '2024-03-01',
+    stats: {
+      homePoints: 115,
+      awayPoints: 110,
+      homeRebounds: 45,
+      awayRebounds: 38,
+      homeAssists: 28,
+      awayAssists: 25,
+      homeSteals: 8,
+      awaySteals: 6,
+      homeBlocks: 5,
+      awayBlocks: 3,
+      homeTurnovers: 12,
+      awayTurnovers: 15,
+      homeFouls: 18,
+      awayFouls: 20,
+      homeFgMade: 42,
+      awayFgMade: 40,
+      homeFgAttempted: 88,
+      awayFgAttempted: 85,
+      homeThreeMade: 12,
+      awayThreeMade: 15,
+      homeThreeAttempted: 32,
+      awayThreeAttempted: 38,
+      homeFtMade: 19,
+      awayFtMade: 15,
+      homeFtAttempted: 24,
+      awayFtAttempted: 20,
+      players: {
+        home: [
+          { name: 'LeBron James', points: 28, rebounds: 10, assists: 8, minutes: 35 },
+          { name: 'Anthony Davis', points: 25, rebounds: 12, assists: 3, minutes: 32 },
+          { name: 'Austin Reaves', points: 18, rebounds: 5, assists: 6, minutes: 28 },
+          { name: 'D\'Angelo Russell', points: 15, rebounds: 3, assists: 7, minutes: 30 },
+          { name: 'Rui Hachimura', points: 12, rebounds: 8, assists: 2, minutes: 25 }
+        ],
+        away: [
+          { name: 'Stephen Curry', points: 32, rebounds: 6, assists: 8, minutes: 36 },
+          { name: 'Klay Thompson', points: 22, rebounds: 4, assists: 3, minutes: 34 },
+          { name: 'Andrew Wiggins', points: 20, rebounds: 8, assists: 2, minutes: 32 },
+          { name: 'Draymond Green', points: 15, rebounds: 7, assists: 6, minutes: 30 },
+          { name: 'Jonathan Kuminga', points: 21, rebounds: 5, assists: 4, minutes: 28 }
+        ]
+      }
+    }
+  },
+  {
+    id: '2',
+    homeTeam: 'Celtics',
+    awayTeam: 'Heat',
+    homeScore: 102,
+    awayScore: 98,
+    date: '2024-02-28',
+    stats: {
+      homePoints: 102,
+      awayPoints: 98,
+      homeRebounds: 42,
+      awayRebounds: 40,
+      homeAssists: 22,
+      awayAssists: 20,
+      homeSteals: 7,
+      awaySteals: 9,
+      homeBlocks: 4,
+      awayBlocks: 2,
+      homeTurnovers: 14,
+      awayTurnovers: 11,
+      homeFouls: 22,
+      awayFouls: 19,
+      homeFgMade: 38,
+      awayFgMade: 36,
+      homeFgAttempted: 82,
+      awayFgAttempted: 80,
+      homeThreeMade: 10,
+      awayThreeMade: 8,
+      homeThreeAttempted: 28,
+      awayThreeAttempted: 25,
+      homeFtMade: 16,
+      awayFtMade: 18,
+      homeFtAttempted: 20,
+      awayFtAttempted: 22,
+      players: {
+        home: [
+          { name: 'Jaylen Brown', points: 24, rebounds: 8, assists: 5, minutes: 34 },
+          { name: 'Jayson Tatum', points: 26, rebounds: 9, assists: 7, minutes: 36 },
+          { name: 'Al Horford', points: 12, rebounds: 7, assists: 3, minutes: 28 },
+          { name: 'Jrue Holiday', points: 18, rebounds: 4, assists: 6, minutes: 32 },
+          { name: 'Derrick White', points: 22, rebounds: 3, assists: 1, minutes: 30 }
+        ],
+        away: [
+          { name: 'Jimmy Butler', points: 28, rebounds: 10, assists: 4, minutes: 35 },
+          { name: 'Bam Adebayo', points: 20, rebounds: 12, assists: 3, minutes: 33 },
+          { name: 'Tyler Herro', points: 18, rebounds: 5, assists: 6, minutes: 31 },
+          { name: 'Kyle Lowry', points: 15, rebounds: 4, assists: 7, minutes: 29 },
+          { name: 'Duncan Robinson', points: 17, rebounds: 2, assists: 0, minutes: 27 }
+        ]
+      }
+    }
+  },
+  {
+    id: '3',
+    homeTeam: 'Nets',
+    awayTeam: '76ers',
+    homeScore: 88,
+    awayScore: 95,
+    date: '2024-02-27',
+    stats: {
+      homePoints: 88,
+      awayPoints: 95,
+      homeRebounds: 35,
+      awayRebounds: 48,
+      homeAssists: 18,
+      awayAssists: 30,
+      homeSteals: 6,
+      awaySteals: 11,
+      homeBlocks: 3,
+      awayBlocks: 7,
+      homeTurnovers: 16,
+      awayTurnovers: 10,
+      homeFouls: 25,
+      awayFouls: 18,
+      homeFgMade: 32,
+      awayFgMade: 35,
+      homeFgAttempted: 78,
+      awayFgAttempted: 82,
+      homeThreeMade: 8,
+      awayThreeMade: 12,
+      homeThreeAttempted: 26,
+      awayThreeAttempted: 32,
+      homeFtMade: 16,
+      awayFtMade: 13,
+      homeFtAttempted: 20,
+      awayFtAttempted: 18,
+      players: {
+        home: [
+          { name: 'Kevin Durant', points: 25, rebounds: 8, assists: 5, minutes: 35 },
+          { name: 'Kyrie Irving', points: 22, rebounds: 5, assists: 6, minutes: 33 },
+          { name: 'Ben Simmons', points: 8, rebounds: 10, assists: 7, minutes: 28 },
+          { name: 'James Harden', points: 18, rebounds: 6, assists: 8, minutes: 32 },
+          { name: 'LaMarcus Aldridge', points: 15, rebounds: 6, assists: 2, minutes: 26 }
+        ],
+        away: [
+          { name: 'Joel Embiid', points: 30, rebounds: 15, assists: 4, minutes: 36 },
+          { name: 'James Harden', points: 25, rebounds: 8, assists: 10, minutes: 34 },
+          { name: 'Tobias Harris', points: 20, rebounds: 7, assists: 3, minutes: 32 },
+          { name: 'Tyrese Maxey', points: 12, rebounds: 4, assists: 8, minutes: 30 },
+          { name: 'Danny Green', points: 8, rebounds: 3, assists: 5, minutes: 24 }
+        ]
+      }
+    }
+  },
+  {
+    id: '4',
+    homeTeam: 'Bucks',
+    awayTeam: 'Knicks',
+    homeScore: 118,
+    awayScore: 112,
+    date: '2024-02-26',
+    stats: {
+      homePoints: 118,
+      awayPoints: 112,
+      homeRebounds: 52,
+      awayRebounds: 45,
+      homeAssists: 25,
+      awayAssists: 22,
+      homeSteals: 9,
+      awaySteals: 7,
+      homeBlocks: 6,
+      awayBlocks: 4,
+      homeTurnovers: 13,
+      awayTurnovers: 16,
+      homeFouls: 20,
+      awayFouls: 23,
+      homeFgMade: 44,
+      awayFgMade: 42,
+      homeFgAttempted: 90,
+      awayFgAttempted: 88,
+      homeThreeMade: 14,
+      awayThreeMade: 11,
+      homeThreeAttempted: 35,
+      awayThreeAttempted: 30,
+      homeFtMade: 16,
+      awayFtMade: 17,
+      homeFtAttempted: 22,
+      awayFtAttempted: 25,
+      players: {
+        home: [
+          { name: 'Giannis Antetokounmpo', points: 32, rebounds: 14, assists: 6, minutes: 38 },
+          { name: 'Khris Middleton', points: 24, rebounds: 8, assists: 5, minutes: 34 },
+          { name: 'Jrue Holiday', points: 18, rebounds: 6, assists: 8, minutes: 32 },
+          { name: 'Brook Lopez', points: 16, rebounds: 10, assists: 2, minutes: 30 },
+          { name: 'Damian Lillard', points: 28, rebounds: 4, assists: 4, minutes: 36 }
+        ],
+        away: [
+          { name: 'Julius Randle', points: 28, rebounds: 12, assists: 4, minutes: 35 },
+          { name: 'Jalen Brunson', points: 26, rebounds: 5, assists: 8, minutes: 37 },
+          { name: 'RJ Barrett', points: 22, rebounds: 7, assists: 3, minutes: 33 },
+          { name: 'Donte DiVincenzo', points: 18, rebounds: 6, assists: 4, minutes: 31 },
+          { name: 'Josh Hart', points: 18, rebounds: 8, assists: 3, minutes: 29 }
+        ]
+      }
+    }
+  },
+  {
+    id: '5',
+    homeTeam: 'Suns',
+    awayTeam: 'Clippers',
+    homeScore: 105,
+    awayScore: 98,
+    date: '2024-02-25',
+    stats: {
+      homePoints: 105,
+      awayPoints: 98,
+      homeRebounds: 48,
+      awayRebounds: 42,
+      homeAssists: 24,
+      awayAssists: 20,
+      homeSteals: 8,
+      awaySteals: 5,
+      homeBlocks: 4,
+      awayBlocks: 2,
+      homeTurnovers: 11,
+      awayTurnovers: 14,
+      homeFouls: 19,
+      awayFouls: 21,
+      homeFgMade: 39,
+      awayFgMade: 36,
+      homeFgAttempted: 84,
+      awayFgAttempted: 82,
+      homeThreeMade: 13,
+      awayThreeMade: 10,
+      homeThreeAttempted: 34,
+      awayThreeAttempted: 28,
+      homeFtMade: 14,
+      awayFtMade: 16,
+      homeFtAttempted: 18,
+      awayFtAttempted: 20,
+      players: {
+        home: [
+          { name: 'Kevin Durant', points: 28, rebounds: 10, assists: 5, minutes: 36 },
+          { name: 'Devin Booker', points: 26, rebounds: 6, assists: 6, minutes: 35 },
+          { name: 'Bradley Beal', points: 22, rebounds: 8, assists: 4, minutes: 34 },
+          { name: 'Deandre Ayton', points: 14, rebounds: 12, assists: 2, minutes: 32 },
+          { name: 'Chris Paul', points: 15, rebounds: 4, assists: 7, minutes: 28 }
+        ],
+        away: [
+          { name: 'Kawhi Leonard', points: 30, rebounds: 9, assists: 4, minutes: 37 },
+          { name: 'Paul George', points: 25, rebounds: 8, assists: 5, minutes: 36 },
+          { name: 'James Harden', points: 18, rebounds: 7, assists: 8, minutes: 33 },
+          { name: 'Russell Westbrook', points: 12, rebounds: 10, assists: 6, minutes: 31 },
+          { name: 'Ivica Zubac', points: 13, rebounds: 8, assists: 2, minutes: 29 }
+        ]
+      }
+    }
+  },
+  {
+    id: '6',
+    homeTeam: 'Mavericks',
+    awayTeam: 'Thunder',
+    homeScore: 122,
+    awayScore: 115,
+    date: '2024-02-24',
+    stats: {
+      homePoints: 122,
+      awayPoints: 115,
+      homeRebounds: 46,
+      awayRebounds: 44,
+      homeAssists: 28,
+      awayAssists: 25,
+      homeSteals: 10,
+      awaySteals: 8,
+      homeBlocks: 5,
+      awayBlocks: 3,
+      homeTurnovers: 12,
+      awayTurnovers: 15,
+      homeFouls: 17,
+      awayFouls: 20,
+      homeFgMade: 45,
+      awayFgMade: 42,
+      homeFgAttempted: 92,
+      awayFgAttempted: 88,
+      homeThreeMade: 15,
+      awayThreeMade: 12,
+      homeThreeAttempted: 38,
+      awayThreeAttempted: 32,
+      homeFtMade: 17,
+      awayFtMade: 19,
+      homeFtAttempted: 22,
+      awayFtAttempted: 25,
+      players: {
+        home: [
+          { name: 'Luka Dončić', points: 35, rebounds: 12, assists: 8, minutes: 38 },
+          { name: 'Kyrie Irving', points: 28, rebounds: 6, assists: 5, minutes: 36 },
+          { name: 'P.J. Washington', points: 18, rebounds: 8, assists: 2, minutes: 32 },
+          { name: 'Dereck Lively II', points: 12, rebounds: 10, assists: 1, minutes: 30 },
+          { name: 'Derrick Jones Jr.', points: 14, rebounds: 4, assists: 3, minutes: 28 }
+        ],
+        away: [
+          { name: 'Shai Gilgeous-Alexander', points: 32, rebounds: 8, assists: 6, minutes: 37 },
+          { name: 'Jalen Williams', points: 22, rebounds: 7, assists: 4, minutes: 34 },
+          { name: 'Josh Giddey', points: 18, rebounds: 9, assists: 5, minutes: 32 },
+          { name: 'Chet Holmgren', points: 16, rebounds: 12, assists: 2, minutes: 35 },
+          { name: 'Luguentz Dort', points: 15, rebounds: 3, assists: 3, minutes: 31 }
+        ]
+      }
+    }
+  },
+  {
+    id: '7',
+    homeTeam: 'Nuggets',
+    awayTeam: 'Timberwolves',
+    homeScore: 108,
+    awayScore: 102,
+    date: '2024-02-23',
+    stats: {
+      homePoints: 108,
+      awayPoints: 102,
+      homeRebounds: 49,
+      awayRebounds: 43,
+      homeAssists: 26,
+      awayAssists: 22,
+      homeSteals: 7,
+      awaySteals: 9,
+      homeBlocks: 5,
+      awayBlocks: 4,
+      homeTurnovers: 13,
+      awayTurnovers: 11,
+      homeFouls: 21,
+      awayFouls: 18,
+      homeFgMade: 40,
+      awayFgMade: 38,
+      homeFgAttempted: 86,
+      awayFgAttempted: 84,
+      homeThreeMade: 11,
+      awayThreeMade: 9,
+      homeThreeAttempted: 30,
+      awayThreeAttempted: 26,
+      homeFtMade: 17,
+      awayFtMade: 17,
+      homeFtAttempted: 22,
+      awayFtAttempted: 20,
+      players: {
+        home: [
+          { name: 'Nikola Jokić', points: 28, rebounds: 16, assists: 7, minutes: 36 },
+          { name: 'Jamal Murray', points: 24, rebounds: 6, assists: 8, minutes: 35 },
+          { name: 'Aaron Gordon', points: 18, rebounds: 9, assists: 3, minutes: 32 },
+          { name: 'Michael Porter Jr.', points: 20, rebounds: 8, assists: 2, minutes: 34 },
+          { name: 'Kentavious Caldwell-Pope', points: 18, rebounds: 4, assists: 1, minutes: 31 }
+        ],
+        away: [
+          { name: 'Anthony Edwards', points: 30, rebounds: 8, assists: 5, minutes: 37 },
+          { name: 'Karl-Anthony Towns', points: 26, rebounds: 12, assists: 3, minutes: 35 },
+          { name: 'Rudy Gobert', points: 14, rebounds: 14, assists: 1, minutes: 33 },
+          { name: 'Mike Conley', points: 16, rebounds: 4, assists: 8, minutes: 32 },
+          { name: 'Jaden McDaniels', points: 16, rebounds: 5, assists: 5, minutes: 30 }
+        ]
+      }
+    }
+  },
+  {
+    id: '8',
+    homeTeam: 'Warriors',
+    awayTeam: 'Kings',
+    homeScore: 125,
+    awayScore: 118,
+    date: '2024-02-22',
+    stats: {
+      homePoints: 125,
+      awayPoints: 118,
+      homeRebounds: 47,
+      awayRebounds: 41,
+      homeAssists: 32,
+      awayAssists: 28,
+      homeSteals: 11,
+      awaySteals: 6,
+      homeBlocks: 4,
+      awayBlocks: 2,
+      homeTurnovers: 14,
+      awayTurnovers: 17,
+      homeFouls: 19,
+      awayFouls: 22,
+      homeFgMade: 46,
+      awayFgMade: 43,
+      homeFgAttempted: 94,
+      awayFgAttempted: 90,
+      homeThreeMade: 16,
+      awayThreeMade: 13,
+      homeThreeAttempted: 42,
+      awayThreeAttempted: 36,
+      homeFtMade: 17,
+      awayFtMade: 19,
+      homeFtAttempted: 24,
+      awayFtAttempted: 26,
+      players: {
+        home: [
+          { name: 'Stephen Curry', points: 38, rebounds: 8, assists: 10, minutes: 38 },
+          { name: 'Klay Thompson', points: 26, rebounds: 6, assists: 4, minutes: 35 },
+          { name: 'Andrew Wiggins', points: 22, rebounds: 9, assists: 3, minutes: 34 },
+          { name: 'Draymond Green', points: 16, rebounds: 8, assists: 8, minutes: 32 },
+          { name: 'Jonathan Kuminga', points: 23, rebounds: 6, assists: 2, minutes: 31 }
+        ],
+        away: [
+          { name: 'De\'Aaron Fox', points: 32, rebounds: 6, assists: 8, minutes: 36 },
+          { name: 'Domantas Sabonis', points: 24, rebounds: 14, assists: 6, minutes: 35 },
+          { name: 'Kevin Huerter', points: 18, rebounds: 5, assists: 3, minutes: 33 },
+          { name: 'Harrison Barnes', points: 20, rebounds: 7, assists: 2, minutes: 32 },
+          { name: 'Malik Monk', points: 24, rebounds: 4, assists: 4, minutes: 30 }
+        ]
+      }
+    }
+  },
+  {
+    id: '9',
+    homeTeam: 'Pelicans',
+    awayTeam: 'Grizzlies',
+    homeScore: 115,
+    awayScore: 109,
+    date: '2024-02-21',
+    stats: {
+      homePoints: 115,
+      awayPoints: 109,
+      homeRebounds: 50,
+      awayRebounds: 45,
+      homeAssists: 27,
+      awayAssists: 23,
+      homeSteals: 9,
+      awaySteals: 7,
+      homeBlocks: 6,
+      awayBlocks: 3,
+      homeTurnovers: 15,
+      awayTurnovers: 12,
+      homeFouls: 20,
+      awayFouls: 24,
+      homeFgMade: 43,
+      awayFgMade: 40,
+      homeFgAttempted: 89,
+      awayFgAttempted: 86,
+      homeThreeMade: 12,
+      awayThreeMade: 10,
+      homeThreeAttempted: 33,
+      awayThreeAttempted: 29,
+      homeFtMade: 17,
+      awayFtMade: 19,
+      homeFtAttempted: 22,
+      awayFtAttempted: 26,
+      players: {
+        home: [
+          { name: 'Zion Williamson', points: 30, rebounds: 12, assists: 4, minutes: 35 },
+          { name: 'Brandon Ingram', points: 26, rebounds: 8, assists: 6, minutes: 36 },
+          { name: 'CJ McCollum', points: 22, rebounds: 6, assists: 5, minutes: 34 },
+          { name: 'Jonas Valančiūnas', points: 16, rebounds: 12, assists: 2, minutes: 32 },
+          { name: 'Herbert Jones', points: 14, rebounds: 7, assists: 3, minutes: 31 }
+        ],
+        away: [
+          { name: 'Ja Morant', points: 28, rebounds: 8, assists: 8, minutes: 37 },
+          { name: 'Desmond Bane', points: 24, rebounds: 6, assists: 4, minutes: 35 },
+          { name: 'Jaren Jackson Jr.', points: 22, rebounds: 10, assists: 2, minutes: 34 },
+          { name: 'Steven Adams', points: 12, rebounds: 11, assists: 1, minutes: 33 },
+          { name: 'Dillon Brooks', points: 15, rebounds: 5, assists: 3, minutes: 32 }
+        ]
+      }
+    }
+  }
 ]
 
 export default function DashboardTabs({ profile }: { profile: Profile }) {
   const [activeTab, setActiveTab] = useState<Tab>('upload')
+  const [selectedGame, setSelectedGame] = useState<string | null>(null)
 
   return (
     <main className="flex-1 flex flex-col px-8 pt-10 pb-16 max-w-[1100px] w-full mx-auto">
@@ -129,6 +603,268 @@ export default function DashboardTabs({ profile }: { profile: Profile }) {
           </div>
         )}
 
+        {/* ── Past Games ── */}
+        {activeTab === 'past' && (
+          <div className="flex flex-col">
+            <h2 className="font-display text-offwhite text-[clamp(1.6rem,3vw,2.2rem)] tracking-[0.04em] mb-2">
+              Past Games
+            </h2>
+            <p className="text-[0.84rem] text-muted font-light mb-8">
+              Track previous games and pull historical stats.
+            </p>
+
+            {selectedGame ? (
+              // Detailed view for selected game
+              (() => {
+                const game = MOCK_GAMES.find(g => g.id === selectedGame)
+                if (!game) return null
+                return (
+                  <div>
+                    <button
+                      onClick={() => setSelectedGame(null)}
+                      className="mb-6 text-muted hover:text-offwhite transition-colors duration-200 text-sm tracking-widest uppercase"
+                    >
+                      ← Back to Games
+                    </button>
+                    
+                    <div className="border border-[rgba(200,136,58,0.12)] rounded-sm bg-[rgba(200,136,58,0.015)] p-6">
+                      <div className="text-center mb-6">
+                        <div className="text-sm text-muted font-light mb-2">{game.date}</div>
+                        <div className="flex justify-center items-center gap-4">
+                          <div className="text-left">
+                            <div className={`text-4xl font-display text-offwhite`}>{game.awayTeam} vs {game.homeTeam}</div>
+                          </div>
+                          <div className="text-4xl font-display text-offwhite">
+                            {game.awayScore} - {game.homeScore}
+                          </div>
+                        </div>
+                      </div>
+
+                      {game.stats && (
+                        <div>
+                          <h4 className="font-display text-offwhite text-lg mb-6 tracking-wider uppercase text-center">Team Statistics</h4>
+                          
+                          {/* Team Stats Comparison */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                            {/* Away Team Stats */}
+                            <div className="border border-[rgba(200,136,58,0.12)] rounded-sm p-4 bg-[rgba(200,136,58,0.02)]">
+                              <h5 className="font-body text-offwhite text-md mb-4 tracking-wider uppercase text-center">{game.awayTeam}</h5>
+                              <div className="space-y-3">
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">Points</span>
+                                  <span className="font-body text-offwhite">{game.stats.awayPoints}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">Rebounds</span>
+                                  <span className="font-body text-offwhite">{game.stats.awayRebounds}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">Assists</span>
+                                  <span className="font-body text-offwhite">{game.stats.awayAssists}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">Steals</span>
+                                  <span className="font-body text-offwhite">{game.stats.awaySteals}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">Blocks</span>
+                                  <span className="font-body text-offwhite">{game.stats.awayBlocks}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">Turnovers</span>
+                                  <span className="font-body text-offwhite">{game.stats.awayTurnovers}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">Fouls</span>
+                                  <span className="font-body text-offwhite">{game.stats.awayFouls}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">FG Made/Att</span>
+                                  <span className="font-body text-offwhite">{game.stats.awayFgMade}/{game.stats.awayFgAttempted}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">FG %</span>
+                                  <span className="font-body text-offwhite">{((game.stats.awayFgMade / game.stats.awayFgAttempted) * 100).toFixed(1)}%</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">3PT Made/Att</span>
+                                  <span className="font-body text-offwhite">{game.stats.awayThreeMade}/{game.stats.awayThreeAttempted}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">3PT %</span>
+                                  <span className="font-body text-offwhite">{((game.stats.awayThreeMade / game.stats.awayThreeAttempted) * 100).toFixed(1)}%</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">FT Made/Att</span>
+                                  <span className="font-body text-offwhite">{game.stats.awayFtMade}/{game.stats.awayFtAttempted}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">FT %</span>
+                                  <span className="font-body text-offwhite">{((game.stats.awayFtMade / game.stats.awayFtAttempted) * 100).toFixed(1)}%</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Home Team Stats */}
+                            <div className="border border-[rgba(200,136,58,0.12)] rounded-sm p-4 bg-[rgba(200,136,58,0.02)]">
+                              <h5 className="font-body text-offwhite text-md mb-4 tracking-wider uppercase text-center">{game.homeTeam}</h5>
+                              <div className="space-y-3">
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">Points</span>
+                                  <span className="font-body text-offwhite">{game.stats.homePoints}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">Rebounds</span>
+                                  <span className="font-body text-offwhite">{game.stats.homeRebounds}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">Assists</span>
+                                  <span className="font-body text-offwhite">{game.stats.homeAssists}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">Steals</span>
+                                  <span className="font-body text-offwhite">{game.stats.homeSteals}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">Blocks</span>
+                                  <span className="font-body text-offwhite">{game.stats.homeBlocks}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">Turnovers</span>
+                                  <span className="font-body text-offwhite">{game.stats.homeTurnovers}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">Fouls</span>
+                                  <span className="font-body text-offwhite">{game.stats.homeFouls}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">FG Made/Att</span>
+                                  <span className="font-body text-offwhite">{game.stats.homeFgMade}/{game.stats.homeFgAttempted}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">FG %</span>
+                                  <span className="font-body text-offwhite">{((game.stats.homeFgMade / game.stats.homeFgAttempted) * 100).toFixed(1)}%</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">3PT Made/Att</span>
+                                  <span className="font-body text-offwhite">{game.stats.homeThreeMade}/{game.stats.homeThreeAttempted}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">3PT %</span>
+                                  <span className="font-body text-offwhite">{((game.stats.homeThreeMade / game.stats.homeThreeAttempted) * 100).toFixed(1)}%</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">FT Made/Att</span>
+                                  <span className="font-body text-offwhite">{game.stats.homeFtMade}/{game.stats.homeFtAttempted}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted text-sm">FT %</span>
+                                  <span className="font-body text-offwhite">{((game.stats.homeFtMade / game.stats.homeFtAttempted) * 100).toFixed(1)}%</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {game.stats.players && (
+                            <div className="space-y-6">
+                              {/* Away Team Players */}
+                              <div>
+                                <h5 className="font-display text-offwhite text-md mb-3 tracking-wider uppercase">{game.awayTeam} Players</h5>
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-sm">
+                                    <thead>
+                                      <tr className="border-b border-[rgba(200,136,58,0.12)]">
+                                        <th className="text-left py-2 text-muted font-light w-1/2">Player</th>
+                                        <th className="text-center py-2 text-muted font-light w-1/8">PTS</th>
+                                        <th className="text-center py-2 text-muted font-light w-1/8">REB</th>
+                                        <th className="text-center py-2 text-muted font-light w-1/8">AST</th>
+                                        <th className="text-center py-2 text-muted font-light w-1/8">MIN</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {game.stats.players.away.map((player, index) => (
+                                        <tr key={index} className="border-b border-[rgba(200,136,58,0.06)]">
+                                          <td className="py-2 text-offwhite font-body">{player.name}</td>
+                                          <td className="py-2 text-center text-offwhite font-body">{player.points}</td>
+                                          <td className="py-2 text-center text-offwhite font-body">{player.rebounds}</td>
+                                          <td className="py-2 text-center text-offwhite font-body">{player.assists}</td>
+                                          <td className="py-2 text-center text-offwhite font-body">{player.minutes}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+
+                              {/* Home Team Players */}
+                              <div>
+                                <h5 className="font-display text-offwhite text-md mb-3 tracking-wider uppercase">{game.homeTeam} Players</h5>
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-sm">
+                                    <thead>
+                                      <tr className="border-b border-[rgba(200,136,58,0.12)]">
+                                        <th className="text-left py-2 text-muted font-light w-1/2">Player</th>
+                                        <th className="text-center py-2 text-muted font-light w-1/8">PTS</th>
+                                        <th className="text-center py-2 text-muted font-light w-1/8">REB</th>
+                                        <th className="text-center py-2 text-muted font-light w-1/8">AST</th>
+                                        <th className="text-center py-2 text-muted font-light w-1/8">MIN</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {game.stats.players.home.map((player, index) => (
+                                        <tr key={index} className="border-b border-[rgba(200,136,58,0.06)]">
+                                          <td className="py-2 text-offwhite font-body">{player.name}</td>
+                                          <td className="py-2 text-center text-offwhite font-body">{player.points}</td>
+                                          <td className="py-2 text-center text-offwhite font-body">{player.rebounds}</td>
+                                          <td className="py-2 text-center text-offwhite font-body">{player.assists}</td>
+                                          <td className="py-2 text-center text-offwhite font-body">{player.minutes}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()
+            ) : (
+              // Games Grid
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {MOCK_GAMES.map((game) => (
+                  <div 
+                    key={game.id} 
+                    className="border border-[rgba(200,136,58,0.12)] rounded-sm bg-[rgba(200,136,58,0.015)] overflow-hidden cursor-pointer hover:bg-[rgba(200,136,58,0.03)] transition-colors duration-200"
+                    onClick={() => setSelectedGame(game.id)}
+                  >
+                    <div className="p-4">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm text-muted font-light">{game.date}</span>
+                        <span className="text-xs tracking-widest uppercase px-2 py-1 rounded-sm bg-muted/20 text-muted">
+                          VIEW STATS
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <div className="text-left">
+                          <div className={`font-display text-lg ${game.awayScore > game.homeScore ? 'text-offwhite' : 'text-muted'}`}>{game.awayTeam}</div>
+                          <div className={`font-display text-lg ${game.awayScore > game.homeScore ? 'text-muted' : 'text-offwhite'}`}>vs {game.homeTeam}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className={`font-display text-lg ${game.awayScore > game.homeScore ? 'text-offwhite' : 'text-muted'}`}>{game.awayScore}</div>
+                          <div className={`font-display text-lg ${game.awayScore > game.homeScore ? 'text-muted' : 'text-offwhite'}`}>{game.homeScore}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </main>
   )
