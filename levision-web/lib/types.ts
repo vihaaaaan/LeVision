@@ -14,6 +14,7 @@ export type Game = {
   homeScore: number
   awayScore: number
   date: string
+  videoUrl?: string
   stats?: {
     homePoints: number
     awayPoints: number

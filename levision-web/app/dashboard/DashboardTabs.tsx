@@ -640,6 +640,26 @@ export default function DashboardTabs({ profile }: { profile: Profile }) {
                         </div>
                       </div>
 
+                      {/* Game Video Section */}
+                      <div className="mb-8">
+                        <h4 className="font-display text-offwhite text-lg mb-3 tracking-wider uppercase text-center">
+                          Game Video
+                        </h4>
+                        {game.videoUrl ? (
+                          <div className="aspect-video w-full max-w-3xl mx-auto rounded-sm overflow-hidden border border-[rgba(200,136,58,0.18)] bg-black/40">
+                            <video
+                              src={game.videoUrl}
+                              controls
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        ) : (
+                          <p className="text-[0.84rem] text-muted font-light text-center">
+                            Whoops, there&apos;s nothing there.
+                          </p>
+                        )}
+                      </div>
+
                       {game.stats && (
                         <div>
                           <h4 className="font-display text-offwhite text-lg mb-6 tracking-wider uppercase text-center">Team Statistics</h4>
