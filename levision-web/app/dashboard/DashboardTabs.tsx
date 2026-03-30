@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { Profile, Game } from '@/lib/types'
 import type { FootageClip } from '@/lib/footage-library'
 import { RoleSwitch } from '@/components/role-ui'
@@ -16,6 +16,15 @@ function gameToReviewClip(game: Game): FootageClip {
 }
 
 type Tab = 'view' | 'upload' | 'past'
+type UploadStatus = 'queued' | 'uploading' | 'uploaded' | 'invalid' | 'failed'
+
+type UploadItem = {
+  id: string
+  file: File
+  status: UploadStatus
+  message?: string
+  uploadedUrl?: string
+}
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'view',   label: 'View Footage' },
@@ -501,6 +510,112 @@ export default function DashboardTabs({ profile }: { profile: Profile }) {
   const [activeTab, setActiveTab] = useState<Tab>('view')
   const [selectedGame, setSelectedGame] = useState<string | null>(null)
   const [reviewClip, setReviewClip] = useState<FootageClip | null>(null)
+  const [uploads, setUploads] = useState<UploadItem[]>([])
+  const [isDragging, setIsDragging] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  const acceptedFormats = '.mp4,.mov,.avi,.mkv,.webm,.m4v'
+  const acceptedExtensions = new Set(['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v'])
+
+  const isVideoFile = (file: File) => {
+    if (file.type.startsWith('video/')) return true
+    const extension = file.name.split('.').pop()?.toLowerCase()
+    return !!extension && acceptedExtensions.has(extension)
+  }
+
+  const queueFiles = (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return
+
+    const next: UploadItem[] = Array.from(fileList).map((file) => {
+      const valid = isVideoFile(file)
+      return {
+        id: `${file.name}-${file.size}-${file.lastModified}`,
+        file,
+        status: valid ? 'queued' : 'invalid',
+        message: valid ? 'Queued for ingest' : 'Only video files are allowed',
+      }
+    })
+
+    setUploads((prev) => [...next, ...prev])
+  }
+
+  const removeUpload = (id: string) => {
+    setUploads((prev) => prev.filter((item) => item.id !== id))
+  }
+
+  const confirmUpload = async () => {
+    const queuedItems = uploads.filter((item) => item.status === 'queued')
+    if (queuedItems.length === 0) return
+
+    setIsUploading(true)
+    setUploads((prev) =>
+      prev.map((item) =>
+        item.status === 'queued'
+          ? { ...item, status: 'uploading', message: 'Uploading...' }
+          : item
+      )
+    )
+
+    const uploadResults = await Promise.all(
+      queuedItems.map(async (item) => {
+        const formData = new FormData()
+        formData.append('file', item.file)
+
+        try {
+          const response = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData,
+          })
+
+          const payload = (await response.json()) as {
+            key?: string
+            url?: string
+            error?: string
+          }
+
+          if (!response.ok) {
+            return {
+              id: item.id,
+              status: 'failed' as UploadStatus,
+              message: payload.error ?? 'Upload failed',
+              uploadedUrl: undefined,
+            }
+          }
+
+          return {
+            id: item.id,
+            status: 'uploaded' as UploadStatus,
+            message: 'Uploaded successfully',
+            uploadedUrl: payload.url ?? undefined,
+          }
+        } catch {
+          return {
+            id: item.id,
+            status: 'failed' as UploadStatus,
+            message: 'Upload failed due to a network error',
+            uploadedUrl: undefined,
+          }
+        }
+      })
+    )
+
+    const resultsById = new Map(uploadResults.map((result) => [result.id, result]))
+
+    setUploads((prev) =>
+      prev.map((item) => {
+        const result = resultsById.get(item.id)
+        if (!result) return item
+        return {
+          ...item,
+          status: result.status,
+          message: result.message,
+          uploadedUrl: result.uploadedUrl,
+        }
+      })
+    )
+    setIsUploading(false)
+  }
 
   return (
     <main className="flex-1 flex flex-col px-8 pt-10 pb-16 max-w-[1280px] w-full mx-auto">
@@ -542,7 +657,36 @@ export default function DashboardTabs({ profile }: { profile: Profile }) {
             </p>
 
             {/* Upload zone */}
-            <div className="border border-dashed border-[rgba(200,136,58,0.28)] rounded-sm p-14 text-center bg-[rgba(200,136,58,0.02)] hover:border-brand hover:bg-[rgba(200,136,58,0.05)] transition-colors duration-200 cursor-default mb-6">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(event) => {
+                event.preventDefault()
+                setIsDragging(true)
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={(event) => {
+                event.preventDefault()
+                setIsDragging(false)
+                queueFiles(event.dataTransfer.files)
+              }}
+              className={`w-full border border-dashed rounded-sm p-14 text-center transition-colors duration-200 mb-6 cursor-pointer ${
+                isDragging
+                  ? 'border-brand bg-[rgba(200,136,58,0.05)]'
+                  : 'border-[rgba(200,136,58,0.28)] bg-[rgba(200,136,58,0.02)] hover:border-brand hover:bg-[rgba(200,136,58,0.05)]'
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={acceptedFormats}
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                  queueFiles(event.target.files)
+                  event.target.value = ''
+                }}
+              />
               <div className="font-display text-[1.3rem] tracking-[0.08em] text-offwhite mb-2">
                 Drop footage here or click to browse
               </div>
@@ -559,7 +703,64 @@ export default function DashboardTabs({ profile }: { profile: Profile }) {
                   </span>
                 ))}
               </div>
-            </div>
+            </button>
+
+            {uploads.length > 0 && (
+              <div className="mb-6 border border-[rgba(200,136,58,0.12)] rounded-sm bg-[rgba(200,136,58,0.015)]">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-[rgba(200,136,58,0.12)]">
+                  <p className="text-[0.74rem] tracking-[0.12em] uppercase text-muted">
+                    Selected files
+                  </p>
+                  <button
+                    type="button"
+                    onClick={confirmUpload}
+                    disabled={isUploading || !uploads.some((item) => item.status === 'queued')}
+                    className="text-[0.68rem] tracking-[0.12em] uppercase px-3 py-1.5 rounded-sm border border-brand/40 text-offwhite bg-brand/10 hover:bg-brand/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
+                  >
+                    {isUploading ? 'Uploading...' : 'Upload queued files'}
+                  </button>
+                </div>
+                <div className="divide-y divide-[rgba(200,136,58,0.08)]">
+                  {uploads.map((item) => (
+                    <div key={item.id} className="px-4 py-3 flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-sm text-offwhite truncate">{item.file.name}</p>
+                        <p
+                          className={`text-[0.7rem] mt-0.5 ${
+                            item.status === 'invalid'
+                              ? 'text-red-300/80'
+                              : item.status === 'failed'
+                                ? 'text-red-300/80'
+                              : item.status === 'uploaded'
+                                ? 'text-green-300/80'
+                                : 'text-muted'
+                          }`}
+                        >
+                          {item.message}
+                        </p>
+                        {item.uploadedUrl && (
+                          <a
+                            href={item.uploadedUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-block mt-1 text-[0.68rem] text-brand hover:text-brand/80 transition-colors duration-200"
+                          >
+                            Open uploaded file
+                          </a>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeUpload(item.id)}
+                        className="text-[0.64rem] tracking-[0.1em] uppercase text-muted hover:text-offwhite transition-colors duration-200"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Recent uploads placeholder */}
             <p className="text-[0.74rem] text-muted/50 font-light">
