@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Profile, Game } from '@/lib/types'
 import type { FootageClip } from '@/lib/footage-library'
 import { RoleSwitch } from '@/components/role-ui'
@@ -24,6 +24,14 @@ type UploadItem = {
   status: UploadStatus
   message?: string
   uploadedUrl?: string
+}
+
+type UploadedVideo = {
+  key: string
+  name: string
+  size: number
+  lastModified: string | null
+  url: string
 }
 
 const TABS: { id: Tab; label: string }[] = [
@@ -513,6 +521,9 @@ export default function DashboardTabs({ profile }: { profile: Profile }) {
   const [uploads, setUploads] = useState<UploadItem[]>([])
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const [uploadedVideos, setUploadedVideos] = useState<UploadedVideo[]>([])
+  const [uploadedVideosLoading, setUploadedVideosLoading] = useState(false)
+  const [uploadedVideosError, setUploadedVideosError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const acceptedFormats = '.mp4,.mov,.avi,.mkv,.webm,.m4v'
@@ -616,6 +627,48 @@ export default function DashboardTabs({ profile }: { profile: Profile }) {
     )
     setIsUploading(false)
   }
+
+  useEffect(() => {
+    if (activeTab !== 'past') return
+
+    let cancelled = false
+
+    const loadUploadedVideos = async () => {
+      setUploadedVideosLoading(true)
+      setUploadedVideosError(null)
+
+      try {
+        const response = await fetch('/api/upload/list', { method: 'GET' })
+        const payload = (await response.json()) as {
+          uploads?: UploadedVideo[]
+          error?: string
+        }
+
+        if (!response.ok) {
+          throw new Error(payload.error ?? 'Unable to fetch uploaded videos')
+        }
+
+        if (!cancelled) {
+          setUploadedVideos(payload.uploads ?? [])
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message =
+            error instanceof Error ? error.message : 'Unable to fetch uploaded videos'
+          setUploadedVideosError(message)
+          setUploadedVideos([])
+        }
+      } finally {
+        if (!cancelled) setUploadedVideosLoading(false)
+      }
+    }
+
+    void loadUploadedVideos()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeTab])
 
   return (
     <main className="flex-1 flex flex-col px-8 pt-10 pb-16 max-w-[1280px] w-full mx-auto">
@@ -782,6 +835,16 @@ export default function DashboardTabs({ profile }: { profile: Profile }) {
             <p className="text-[0.84rem] text-muted font-light mb-8">
               Track previous games and pull historical stats.
             </p>
+
+            {uploadedVideosLoading && (
+              <p className="text-[0.74rem] text-muted/70 font-light mb-4">
+                Loading uploaded videos...
+              </p>
+            )}
+
+            {uploadedVideosError && (
+              <p className="text-[0.74rem] text-red-300/80 font-light mb-4">{uploadedVideosError}</p>
+            )}
 
             {selectedGame ? (
               // Detailed view for selected game
@@ -1025,6 +1088,40 @@ export default function DashboardTabs({ profile }: { profile: Profile }) {
             ) : (
               // Games Grid
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {uploadedVideos.map((video) => (
+                  <div
+                    key={video.key}
+                    className="border border-brand/30 rounded-sm bg-brand/5 overflow-hidden cursor-pointer hover:bg-brand/10 transition-colors duration-200"
+                    onClick={() => {
+                      setReviewClip({
+                        id: `uploaded-${video.key}`,
+                        title: video.name,
+                        createdAt: video.lastModified ?? new Date().toISOString(),
+                        playbackUrl: video.url,
+                      })
+                      setActiveTab('view')
+                    }}
+                  >
+                    <div className="p-4">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm text-muted font-light">
+                          {video.lastModified
+                            ? new Date(video.lastModified).toLocaleDateString()
+                            : 'Uploaded video'}
+                        </span>
+                        <span className="text-xs tracking-widest uppercase px-2 py-1 rounded-sm bg-brand/20 text-brand">
+                          REVIEW VIDEO
+                        </span>
+                      </div>
+                      <div className="text-left">
+                        <div className="font-display text-lg text-offwhite truncate">{video.name}</div>
+                        <div className="text-xs text-muted mt-1">
+                          {(video.size / (1024 * 1024)).toFixed(1)} MB
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
                 {MOCK_GAMES.map((game) => (
                   <div 
                     key={game.id} 

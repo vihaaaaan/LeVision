@@ -28,7 +28,14 @@ function createR2Client() {
 
 function toUploadKey(filename: string) {
   const extension = filename.split('.').pop()?.toLowerCase() ?? 'mp4'
-  return `uploads/${Date.now()}-${randomUUID()}.${extension}`
+  const baseName = filename.replace(/\.[^.]+$/, '')
+  const safeBaseName = baseName
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-zA-Z0-9-_]/g, '')
+    .slice(0, 80) || 'video'
+
+  return `uploads/${Date.now()}-${randomUUID()}__${safeBaseName}.${extension}`
 }
 
 export async function POST(request: Request) {
