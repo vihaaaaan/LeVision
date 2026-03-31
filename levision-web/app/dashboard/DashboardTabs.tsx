@@ -35,9 +35,9 @@ type UploadedVideo = {
 }
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'view',   label: 'View Footage' },
   { id: 'upload', label: 'Upload Footage' },
-  { id: 'past',   label: 'Past Games' }
+  { id: 'past',   label: 'Past Games' },
+  { id: 'view',   label: 'View Footage' },
 ]
 
 // Mock past games data
