@@ -2,5 +2,6 @@
 __pycache__/
 *.pyc
 .claude
-.venv311
+venv/
 *.mp4
+outputs/
