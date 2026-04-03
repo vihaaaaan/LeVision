@@ -62,3 +62,33 @@ cp .env.example .env
 | `ESPN_SUMMARY_URL` | ESPN game summary API endpoint |
 | `SCHEMA_MODE` | `snake` for snake_case column mapping |
 | `DRY_RUN` | `true` to skip writes during testing |
+
+### Vision Pipeline (`vision/`)
+
+Requires a `ROBOFLOW_API_KEY` (free on roboflow) environment variable:
+
+```bash
+export ROBOFLOW_API_KEY=your-key
+
+With a GPU (full pipeline including SAM2 tracking):
+
+python vision/fresh_vision_pipeline.py \
+  --source-video-directory path/to/videos \
+  --source-video-name your_game.mp4
+
+Without a GPU (skips SAM2, still runs detection, OCR, and court mapping):
+
+python vision/fresh_vision_pipeline.py \
+  --source-video-directory path/to/videos \
+  --source-video-name your_game.mp4 \
+  --skip-sam2
+
+Outputs are saved to fresh_vision_outputs/ by default. Use --output-directory to change this.
+
+To do a check without processing the full video:
+
+python vision/vision_pipeline.py \
+  --source-video-directory path/to/videos \
+  --source-video-name game.mp4 \
+  --mode smoke \
+  --skip-sam2
