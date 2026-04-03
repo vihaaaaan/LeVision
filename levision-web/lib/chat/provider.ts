@@ -1,4 +1,5 @@
 import type { ChatMessage, ChatResponse } from '@/lib/chat/types'
+import { runNbaToolQuery } from '@/lib/chat/nba-tools'
 
 type CustomApiResponse =
   | { message?: string; content?: string }
@@ -47,6 +48,34 @@ function resolveAssistantText(payload: CustomApiResponse): string | null {
 export async function generateChatReply(
   messages: ChatMessage[]
 ): Promise<ChatResponse> {
+  const latestUserMessage = [...messages]
+    .reverse()
+    .find((message) => message.role === 'user')
+
+  if (latestUserMessage?.content) {
+    const toolOutcome = await runNbaToolQuery(latestUserMessage.content)
+
+    if (toolOutcome.kind === 'answer') {
+      return {
+        provider: 'nba-tools',
+        message: {
+          role: 'assistant',
+          content: toolOutcome.answer,
+        },
+      }
+    }
+
+    if (toolOutcome.kind === 'error') {
+      return {
+        provider: 'nba-tools',
+        message: {
+          role: 'assistant',
+          content: `NBA data tools error: ${toolOutcome.error}`,
+        },
+      }
+    }
+  }
+
   const endpoint = process.env.LEVISION_CHAT_API_URL
   const customApiKey = process.env.LEVISION_CHAT_API_KEY
   const openAiApiKey = process.env.OPENAI_API_KEY ?? customApiKey
