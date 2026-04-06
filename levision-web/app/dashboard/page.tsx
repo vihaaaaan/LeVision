@@ -79,7 +79,7 @@ export default async function DashboardPage() {
         </nav>
 
         {/* Tabs */}
-        <DashboardTabs profile={profile} />
+        <DashboardTabs />
 
       </div>
       </UserRoleProvider>

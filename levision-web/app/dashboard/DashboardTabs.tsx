@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import type { Profile, Game } from '@/lib/types'
+import type { Game } from '@/lib/types'
 import type { FootageClip } from '@/lib/footage-library'
 import { RoleSwitch } from '@/components/role-ui'
 import FootageViewTab from '@/components/FootageViewTab'
@@ -514,7 +514,7 @@ const MOCK_GAMES: Game[] = [
   }
 ]
 
-export default function DashboardTabs({ profile }: { profile: Profile }) {
+export default function DashboardTabs() {
   const [activeTab, setActiveTab] = useState<Tab>('view')
   const [selectedGame, setSelectedGame] = useState<string | null>(null)
   const [reviewClip, setReviewClip] = useState<FootageClip | null>(null)

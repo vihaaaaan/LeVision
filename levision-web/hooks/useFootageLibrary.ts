@@ -13,8 +13,7 @@ export function useFootageLibrary() {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setError(null)
+
     fetchFootageLibraryClips()
       .then((items) => {
         if (!cancelled) setClips(items)
