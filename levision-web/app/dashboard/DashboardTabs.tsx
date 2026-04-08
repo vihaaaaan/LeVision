@@ -12,6 +12,7 @@ function gameToReviewClip(game: Game): FootageClip {
     title: `${game.awayTeam} @ ${game.homeTeam}`,
     createdAt: game.date,
     playbackUrl: game.videoUrl ?? null,
+    game: game,
   }
 }
 
@@ -44,9 +45,10 @@ const TABS: { id: Tab; label: string }[] = [
 const MOCK_GAMES: Game[] = [
   {
     id: '1',
-    homeTeam: 'Lakers',
-    awayTeam: 'Warriors',
+    homeTeam: 'Warriors',
+    awayTeam: 'Lakers',
     homeScore: 115,
+    awayScore: 110,
     awayScore: 110,
     date: '2024-03-01',
     videoUrl:
@@ -54,44 +56,44 @@ const MOCK_GAMES: Game[] = [
     stats: {
       homePoints: 115,
       awayPoints: 110,
-      homeRebounds: 45,
-      awayRebounds: 38,
-      homeAssists: 28,
-      awayAssists: 25,
-      homeSteals: 8,
-      awaySteals: 6,
-      homeBlocks: 5,
-      awayBlocks: 3,
-      homeTurnovers: 12,
-      awayTurnovers: 15,
-      homeFouls: 18,
-      awayFouls: 20,
-      homeFgMade: 42,
-      awayFgMade: 40,
-      homeFgAttempted: 88,
-      awayFgAttempted: 85,
-      homeThreeMade: 12,
-      awayThreeMade: 15,
-      homeThreeAttempted: 32,
-      awayThreeAttempted: 38,
-      homeFtMade: 19,
-      awayFtMade: 15,
-      homeFtAttempted: 24,
-      awayFtAttempted: 20,
+      homeRebounds: 38,
+      awayRebounds: 45,
+      homeAssists: 25,
+      awayAssists: 28,
+      homeSteals: 6,
+      awaySteals: 8,
+      homeBlocks: 3,
+      awayBlocks: 5,
+      homeTurnovers: 15,
+      awayTurnovers: 12,
+      homeFouls: 20,
+      awayFouls: 18,
+      homeFgMade: 40,
+      awayFgMade: 42,
+      homeFgAttempted: 85,
+      awayFgAttempted: 88,
+      homeThreeMade: 15,
+      awayThreeMade: 12,
+      homeThreeAttempted: 38,
+      awayThreeAttempted: 32,
+      homeFtMade: 15,
+      awayFtMade: 19,
+      homeFtAttempted: 20,
+      awayFtAttempted: 24,
       players: {
         home: [
-          { name: 'LeBron James', points: 28, rebounds: 10, assists: 8, minutes: 35 },
-          { name: 'Anthony Davis', points: 25, rebounds: 12, assists: 3, minutes: 32 },
-          { name: 'Austin Reaves', points: 18, rebounds: 5, assists: 6, minutes: 28 },
-          { name: 'D\'Angelo Russell', points: 15, rebounds: 3, assists: 7, minutes: 30 },
-          { name: 'Rui Hachimura', points: 12, rebounds: 8, assists: 2, minutes: 25 }
+          { name: 'Stephen Curry', points: 32, rebounds: 6, assists: 8, minutes: 36, steals: 3, blocks: 0 },
+          { name: 'Klay Thompson', points: 22, rebounds: 4, assists: 3, minutes: 34, steals: 1, blocks: 1 },
+          { name: 'Andrew Wiggins', points: 20, rebounds: 8, assists: 2, minutes: 32, steals: 2, blocks: 1 },
+          { name: 'Draymond Green', points: 15, rebounds: 7, assists: 6, minutes: 30, steals: 2, blocks: 1 },
+          { name: 'Jonathan Kuminga', points: 21, rebounds: 5, assists: 4, minutes: 28, steals: 1, blocks: 0 }
         ],
         away: [
-          { name: 'Stephen Curry', points: 32, rebounds: 6, assists: 8, minutes: 36 },
-          { name: 'Klay Thompson', points: 22, rebounds: 4, assists: 3, minutes: 34 },
-          { name: 'Andrew Wiggins', points: 20, rebounds: 8, assists: 2, minutes: 32 },
-          { name: 'Draymond Green', points: 15, rebounds: 7, assists: 6, minutes: 30 },
-          { name: 'Jonathan Kuminga', points: 21, rebounds: 5, assists: 4, minutes: 28 }
+          { name: 'LeBron James', points: 28, rebounds: 10, assists: 8, minutes: 35, steals: 2, blocks: 1 },
+          { name: 'Anthony Davis', points: 25, rebounds: 12, assists: 3, minutes: 32, steals: 1, blocks: 3 },
+          { name: 'Austin Reaves', points: 18, rebounds: 5, assists: 6, minutes: 28, steals: 1, blocks: 0 },
+          { name: 'D\'Angelo Russell', points: 15, rebounds: 3, assists: 7, minutes: 30, steals: 1, blocks: 0 },
+          { name: 'Rui Hachimura', points: 12, rebounds: 8, assists: 2, minutes: 25, steals: 0, blocks: 1 }
         ]
       }
     }
@@ -132,18 +134,18 @@ const MOCK_GAMES: Game[] = [
       awayFtAttempted: 22,
       players: {
         home: [
-          { name: 'Jaylen Brown', points: 24, rebounds: 8, assists: 5, minutes: 34 },
-          { name: 'Jayson Tatum', points: 26, rebounds: 9, assists: 7, minutes: 36 },
-          { name: 'Al Horford', points: 12, rebounds: 7, assists: 3, minutes: 28 },
-          { name: 'Jrue Holiday', points: 18, rebounds: 4, assists: 6, minutes: 32 },
-          { name: 'Derrick White', points: 22, rebounds: 3, assists: 1, minutes: 30 }
+          { name: 'Jaylen Brown', points: 24, rebounds: 8, assists: 5, minutes: 34, steals: 2, blocks: 1 },
+          { name: 'Jayson Tatum', points: 26, rebounds: 9, assists: 7, minutes: 36, steals: 1, blocks: 0 },
+          { name: 'Al Horford', points: 12, rebounds: 7, assists: 3, minutes: 28, steals: 0, blocks: 2 },
+          { name: 'Jrue Holiday', points: 18, rebounds: 4, assists: 6, minutes: 32, steals: 2, blocks: 0 },
+          { name: 'Derrick White', points: 22, rebounds: 3, assists: 1, minutes: 30, steals: 1, blocks: 1 }
         ],
         away: [
-          { name: 'Jimmy Butler', points: 28, rebounds: 10, assists: 4, minutes: 35 },
-          { name: 'Bam Adebayo', points: 20, rebounds: 12, assists: 3, minutes: 33 },
-          { name: 'Tyler Herro', points: 18, rebounds: 5, assists: 6, minutes: 31 },
-          { name: 'Kyle Lowry', points: 15, rebounds: 4, assists: 7, minutes: 29 },
-          { name: 'Duncan Robinson', points: 17, rebounds: 2, assists: 0, minutes: 27 }
+          { name: 'Jimmy Butler', points: 28, rebounds: 10, assists: 4, minutes: 35, steals: 2, blocks: 1 },
+          { name: 'Bam Adebayo', points: 20, rebounds: 12, assists: 3, minutes: 33, steals: 1, blocks: 2 },
+          { name: 'Tyler Herro', points: 18, rebounds: 5, assists: 6, minutes: 31, steals: 1, blocks: 0 },
+          { name: 'Kyle Lowry', points: 15, rebounds: 4, assists: 7, minutes: 29, steals: 1, blocks: 0 },
+          { name: 'Duncan Robinson', points: 17, rebounds: 2, assists: 0, minutes: 27, steals: 0, blocks: 0 }
         ]
       }
     }
@@ -671,7 +673,7 @@ export default function DashboardTabs({ profile }: { profile: Profile }) {
   }, [activeTab])
 
   return (
-    <main className="flex-1 flex flex-col px-8 pt-10 pb-16 max-w-[1280px] w-full mx-auto">
+    <main className="flex-1 flex flex-col px-12 pt-10 pb-16 w-full">
 
       {/* Tab bar */}
       <div className="flex gap-1 border-b border-[rgba(200,136,58,0.15)] mb-10">

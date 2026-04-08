@@ -3,6 +3,8 @@
  * (e.g. CDN, transcoded bucket, or a dedicated API) — not from the raw upload ingest path.
  */
 
+import type { Game } from './types'
+
 export type FootageClip = {
   id: string
   title: string
@@ -12,6 +14,10 @@ export type FootageClip = {
    * Stream URL from the playback layer. Null until processing completes or when unavailable.
    */
   playbackUrl: string | null
+  /**
+   * Associated game data for stats display
+   */
+  game?: Game
 }
 
 /**

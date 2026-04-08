@@ -1,12 +1,9 @@
-'use client'
-
 import { useEffect, useMemo } from 'react'
 import GameTimeStatsPanel from '@/components/GameTimeStatsPanel'
-import LeVisionChatPanel from '@/components/chat/LeVisionChatPanel'
+import TeamStatsPanel from '@/components/TeamStatsPanel'
 import { useChatDock } from '@/components/chat/ChatDockProvider'
 import { RoleGate, RoleSwitch } from '@/components/role-ui'
 import { useUserRole } from '@/components/UserRoleProvider'
-import { useLeVisionChat } from '@/hooks/useLeVisionChat'
 import { useFootageLibrary } from '@/hooks/useFootageLibrary'
 import type { FootageClip } from '@/lib/footage-library'
 
@@ -25,8 +22,6 @@ export default function FootageViewTab({ reviewClip = null }: Props) {
   const isCoach = role === 'coach'
   const { setFloatingHidden } = useChatDock()
   const { clips, loading, error } = useFootageLibrary()
-  const { endRef, error: chatError, input, isSending, messages, setInput, submitMessage } =
-    useLeVisionChat()
 
   const mergedClips = useMemo(() => {
     if (!reviewClip) return clips
@@ -39,23 +34,11 @@ export default function FootageViewTab({ reviewClip = null }: Props) {
     : mergedClips[0] ?? null
 
   useEffect(() => {
-    const hideFloating = role === 'coach'
+    const hideFloating = false // Always show floating chat now
     setFloatingHidden(hideFloating)
 
     return () => setFloatingHidden(false)
-  }, [role, setFloatingHidden])
-
-  async function handleChatSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    await submitMessage()
-  }
-
-  function handleChatKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      void submitMessage()
-    }
-  }
+  }, [setFloatingHidden])
 
   return (
     <div className="flex flex-col gap-6">
@@ -63,25 +46,22 @@ export default function FootageViewTab({ reviewClip = null }: Props) {
         <h2 className="font-display text-offwhite text-[clamp(1.6rem,3vw,2.2rem)] tracking-[0.04em] mb-2">
           View Footage
         </h2>
-        <p className="text-[0.84rem] text-muted font-light max-w-[52ch]">
-          Watch processed game film from your library. Playback is loaded from the viewing
-          pipeline, which is separate from where files are uploaded.
+        <p className="text-[0.84rem] text-muted font-light">
+          Watch processed game film from your library. Playback is loaded from the viewing pipeline, which is separate from where files are uploaded.
         </p>
       </div>
 
       <div
         className={
-          isCoach
-            ? 'grid min-h-[min(60vh,520px)] gap-5 xl:grid-cols-[280px_minmax(0,1fr)_280px]'
-            : 'min-h-[min(60vh,520px)] flex flex-col'
+          'grid min-h-[min(60vh,520px)] gap-5 xl:grid-cols-[320px_minmax(0,1fr)_320px]'
         }
       >
-        <RoleGate roles="coach">
-          <div className="min-h-[min(60vh,520px)]">
-            <GameTimeStatsPanel clip={active} />
-          </div>
-        </RoleGate>
+        {/* Left Panel - Away Team Stats */}
+        <div className="min-h-[min(60vh,520px)]">
+          <TeamStatsPanel team="away" game={active?.game} />
+        </div>
 
+        {/* Center - Video */}
         <div className="flex min-h-[min(60vh,520px)] flex-col">
           <div className="flex-1 border border-[rgba(200,136,58,0.15)] rounded-sm bg-black overflow-hidden flex flex-col">
             <div className="aspect-video w-full max-h-[min(56vh,640px)] bg-black flex items-center justify-center relative">
@@ -130,21 +110,10 @@ export default function FootageViewTab({ reviewClip = null }: Props) {
           </div>
         </div>
 
-        <RoleGate roles="coach">
-          <div className="min-h-[min(60vh,520px)]">
-            <LeVisionChatPanel
-              variant="inline"
-              endRef={endRef}
-              error={chatError}
-              input={input}
-              isSending={isSending}
-              messages={messages}
-              onInputChange={setInput}
-              onKeyDown={handleChatKeyDown}
-              onSubmit={handleChatSubmit}
-            />
-          </div>
-        </RoleGate>
+        {/* Right Panel - Home Team Stats */}
+        <div className="min-h-[min(60vh,520px)]">
+          <TeamStatsPanel team="home" game={active?.game} />
+        </div>
       </div>
     </div>
   )

@@ -67,4 +67,7 @@ export type PlayerStats = {
   rebounds: number
   assists: number
   minutes: number
+  steals?: number
+  blocks?: number
+  headshot_url?: string
 }
