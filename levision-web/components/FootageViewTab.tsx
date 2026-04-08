@@ -1,7 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { RoleSwitch } from '@/components/role-ui'
+import { useEffect, useMemo } from 'react'
+import GameTimeStatsPanel from '@/components/GameTimeStatsPanel'
+import LeVisionChatPanel from '@/components/chat/LeVisionChatPanel'
+import { useChatDock } from '@/components/chat/ChatDockProvider'
+import { RoleGate, RoleSwitch } from '@/components/role-ui'
+import { useUserRole } from '@/components/UserRoleProvider'
+import { useLeVisionChat } from '@/hooks/useLeVisionChat'
 import { useFootageLibrary } from '@/hooks/useFootageLibrary'
 import type { FootageClip } from '@/lib/footage-library'
 
@@ -16,8 +21,12 @@ type Props = {
 }
 
 export default function FootageViewTab({ reviewClip = null }: Props) {
+  const { role } = useUserRole()
+  const isCoach = role === 'coach'
+  const { setFloatingHidden } = useChatDock()
   const { clips, loading, error } = useFootageLibrary()
-  const [activeId, setActiveId] = useState<string | null>(null)
+  const { endRef, error: chatError, input, isSending, messages, setInput, submitMessage } =
+    useLeVisionChat()
 
   const mergedClips = useMemo(() => {
     if (!reviewClip) return clips
@@ -25,15 +34,28 @@ export default function FootageViewTab({ reviewClip = null }: Props) {
     return [reviewClip, ...rest]
   }, [clips, reviewClip])
 
-  const active = mergedClips.find((c) => c.id === activeId) ?? null
+  const active = reviewClip
+    ? mergedClips.find((c) => c.id === reviewClip.id) ?? mergedClips[0] ?? null
+    : mergedClips[0] ?? null
 
   useEffect(() => {
-    if (reviewClip) {
-      setActiveId(reviewClip.id)
-    } else {
-      setActiveId(null)
+    const hideFloating = role === 'coach'
+    setFloatingHidden(hideFloating)
+
+    return () => setFloatingHidden(false)
+  }, [role, setFloatingHidden])
+
+  async function handleChatSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    await submitMessage()
+  }
+
+  function handleChatKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      void submitMessage()
     }
-  }, [reviewClip])
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -47,52 +69,82 @@ export default function FootageViewTab({ reviewClip = null }: Props) {
         </p>
       </div>
 
-      <div className="min-h-[min(60vh,520px)] flex flex-col">
-        <div className="flex-1 border border-[rgba(200,136,58,0.15)] rounded-sm bg-black overflow-hidden flex flex-col">
-          <div className="aspect-video w-full max-h-[min(56vh,640px)] bg-black flex items-center justify-center relative">
-            {loading && (
-              <p className="text-[0.8rem] text-muted/60 font-light">Loading…</p>
-            )}
-            {!loading && error && (
-              <p className="text-[0.8rem] text-red-300/80 font-light px-6 text-center">{error}</p>
-            )}
-            {!loading && !error && active?.playbackUrl ? (
-              <video
-                key={active.playbackUrl}
-                controls
-                playsInline
-                className="w-full h-full object-contain"
-                src={active.playbackUrl}
-              >
-                Your browser does not support video playback.
-              </video>
-            ) : null}
-            {!loading && !error && !active?.playbackUrl && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-8 text-center">
-                <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center">
-                  <span className="text-muted/40 text-lg font-light">▶</span>
+      <div
+        className={
+          isCoach
+            ? 'grid min-h-[min(60vh,520px)] gap-5 xl:grid-cols-[280px_minmax(0,1fr)_280px]'
+            : 'min-h-[min(60vh,520px)] flex flex-col'
+        }
+      >
+        <RoleGate roles="coach">
+          <div className="min-h-[min(60vh,520px)]">
+            <GameTimeStatsPanel clip={active} />
+          </div>
+        </RoleGate>
+
+        <div className="flex min-h-[min(60vh,520px)] flex-col">
+          <div className="flex-1 border border-[rgba(200,136,58,0.15)] rounded-sm bg-black overflow-hidden flex flex-col">
+            <div className="aspect-video w-full max-h-[min(56vh,640px)] bg-black flex items-center justify-center relative">
+              {loading && (
+                <p className="text-[0.8rem] text-muted/60 font-light">Loading…</p>
+              )}
+              {!loading && error && (
+                <p className="text-[0.8rem] text-red-300/80 font-light px-6 text-center">{error}</p>
+              )}
+              {!loading && !error && active?.playbackUrl ? (
+                <video
+                  key={active.playbackUrl}
+                  controls
+                  playsInline
+                  className="w-full h-full object-contain"
+                  src={active.playbackUrl}
+                >
+                  Your browser does not support video playback.
+                </video>
+              ) : null}
+              {!loading && !error && !active?.playbackUrl && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-8 text-center">
+                  <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center">
+                    <span className="text-muted/40 text-lg font-light">▶</span>
+                  </div>
+                  <p className="text-[0.74rem] text-muted/50 font-light max-w-[320px]">
+                    <RoleSwitch
+                      coach="No plays saved. Even Phil Jackson wrote things down."
+                      fan="Nothing here. Emptier than Cleveland's trophy case before 2016."
+                      player="No footage yet. LeBron didn't become LeBron by skipping film."
+                    />
+                  </p>
                 </div>
-                <p className="text-[0.74rem] text-muted/50 font-light max-w-[320px]">
-                  <RoleSwitch
-                    coach="No plays saved. Even Phil Jackson wrote things down."
-                    fan="Nothing here. Emptier than Cleveland's trophy case before 2016."
-                    player="No footage yet. LeBron didn't become LeBron by skipping film."
-                  />
+              )}
+            </div>
+            {active?.playbackUrl && (
+              <div className="px-4 py-3 border-t border-[rgba(200,136,58,0.1)]">
+                <h3 className="font-display text-offwhite text-lg tracking-wide">{active.title}</h3>
+                <p className="text-[0.68rem] text-muted/55 font-light mt-1 tracking-wide uppercase">
+                  {isPastGameClip(active)
+                    ? 'Opened from Past Games'
+                    : 'Playback source: library pipeline (not upload ingest)'}
                 </p>
               </div>
             )}
           </div>
-          {active?.playbackUrl && (
-            <div className="px-4 py-3 border-t border-[rgba(200,136,58,0.1)]">
-              <h3 className="font-display text-offwhite text-lg tracking-wide">{active.title}</h3>
-              <p className="text-[0.68rem] text-muted/55 font-light mt-1 tracking-wide uppercase">
-                {isPastGameClip(active)
-                  ? 'Opened from Past Games'
-                  : 'Playback source: library pipeline (not upload ingest)'}
-              </p>
-            </div>
-          )}
         </div>
+
+        <RoleGate roles="coach">
+          <div className="min-h-[min(60vh,520px)]">
+            <LeVisionChatPanel
+              variant="inline"
+              endRef={endRef}
+              error={chatError}
+              input={input}
+              isSending={isSending}
+              messages={messages}
+              onInputChange={setInput}
+              onKeyDown={handleChatKeyDown}
+              onSubmit={handleChatSubmit}
+            />
+          </div>
+        </RoleGate>
       </div>
     </div>
   )

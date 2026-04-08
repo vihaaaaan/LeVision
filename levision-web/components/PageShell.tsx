@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react'
+import { ChatDockProvider } from '@/components/chat/ChatDockProvider'
 import FloatingChat from '@/components/FloatingChat'
 
 export default function PageShell({ children }: { children: ReactNode }) {
   return (
+    <ChatDockProvider>
     <div className="relative min-h-screen bg-pitch overflow-hidden">
 
       {/* Radial amber glow — centered, low */}
@@ -148,5 +150,6 @@ export default function PageShell({ children }: { children: ReactNode }) {
 
       <FloatingChat />
     </div>
+    </ChatDockProvider>
   )
 }
