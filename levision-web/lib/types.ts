@@ -71,3 +71,34 @@ export type PlayerStats = {
   blocks?: number
   headshot_url?: string
 }
+
+export type LivePlayerState = {
+  id: string
+  name: string
+  onCourt: boolean
+  points: number
+  rebounds: number
+  assists: number
+  steals: number
+  blocks: number
+}
+
+export type LiveTeamState = {
+  teamName: string
+  onCourt: string[]
+  playerStats: LivePlayerState[]
+}
+
+export type LiveGameState = {
+  videoSecond: number
+  clock: string
+  period: number
+  homeTeam: LiveTeamState
+  awayTeam: LiveTeamState
+}
+
+export type LiveGameTimeline = {
+  minSecond: number
+  maxSecond: number
+  snapshots: Record<string, LiveGameState>
+}
