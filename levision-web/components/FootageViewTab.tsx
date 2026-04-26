@@ -1,16 +1,30 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import GameTimeStatsPanel from '@/components/GameTimeStatsPanel'
 import TeamStatsPanel from '@/components/TeamStatsPanel'
 import { useChatDock } from '@/components/chat/ChatDockProvider'
 import { RoleGate, RoleSwitch } from '@/components/role-ui'
 import { useUserRole } from '@/components/UserRoleProvider'
 import { useFootageLibrary } from '@/hooks/useFootageLibrary'
+import { useLiveGameState } from '@/hooks/useLiveGameState'
 import type { FootageClip } from '@/lib/footage-library'
 
 const PAST_GAME_ID_PREFIX = 'past-game-'
+const LAKERS_WARRIORS_CHRISTMAS_PATTERN = /lakers[\s_-]*warriors[\s_-]*christmas/i
 
 function isPastGameClip(clip: FootageClip | null): boolean {
   return clip != null && clip.id.startsWith(PAST_GAME_ID_PREFIX)
+}
+
+function isLakersWarriorsChristmasClip(clip: FootageClip | null): boolean {
+  if (!clip) return false
+  const haystack = `${clip.title ?? ''} ${clip.playbackUrl ?? ''} ${clip.id ?? ''}`
+  return LAKERS_WARRIORS_CHRISTMAS_PATTERN.test(haystack)
+}
+
+function formatQuarter(period?: number): string {
+  if (!period || period <= 0) return ''
+  if (period > 4) return `OT${period - 4}`
+  return `Q${period}`
 }
 
 type Props = {
@@ -33,12 +47,33 @@ export default function FootageViewTab({ reviewClip = null }: Props) {
     ? mergedClips.find((c) => c.id === reviewClip.id) ?? mergedClips[0] ?? null
     : mergedClips[0] ?? null
 
+  const isChristmasClip = isLakersWarriorsChristmasClip(active)
+
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const [videoSecond, setVideoSecond] = useState(0)
+  const [trackedClipId, setTrackedClipId] = useState<string | null>(active?.id ?? null)
+
+  // Reset playback tracking when the active clip changes. Setting state during
+  // render (instead of in an effect) avoids a cascading render pass.
+  if ((active?.id ?? null) !== trackedClipId) {
+    setTrackedClipId(active?.id ?? null)
+    setVideoSecond(0)
+  }
+
+  const { liveState, loading: liveLoading, error: liveError } = useLiveGameState({
+    enabled: isChristmasClip,
+    videoSecond,
+  })
+
   useEffect(() => {
     const hideFloating = false // Always show floating chat now
     setFloatingHidden(hideFloating)
 
     return () => setFloatingHidden(false)
   }, [setFloatingHidden])
+
+  const quarterLabel = formatQuarter(liveState?.period)
+  const clockLabel = liveState?.clock ?? '--:--'
 
   return (
     <div className="flex flex-col gap-6">
@@ -58,7 +93,13 @@ export default function FootageViewTab({ reviewClip = null }: Props) {
       >
         {/* Left Panel - Away Team Stats */}
         <div className="min-h-[min(60vh,520px)]">
-          <TeamStatsPanel team="away" game={active?.game} />
+          <TeamStatsPanel
+            team="away"
+            game={active?.game}
+            liveTeam={isChristmasClip ? liveState?.awayTeam : undefined}
+            liveClock={isChristmasClip ? liveState?.clock : undefined}
+            livePeriod={isChristmasClip ? liveState?.period : undefined}
+          />
         </div>
 
         {/* Center - Video */}
@@ -73,11 +114,20 @@ export default function FootageViewTab({ reviewClip = null }: Props) {
               )}
               {!loading && !error && active?.playbackUrl ? (
                 <video
+                  ref={videoRef}
                   key={active.playbackUrl}
                   controls
                   playsInline
                   className="w-full h-full object-contain"
                   src={active.playbackUrl}
+                  onTimeUpdate={(event) => {
+                    if (!isChristmasClip) return
+                    setVideoSecond(event.currentTarget.currentTime)
+                  }}
+                  onSeeked={(event) => {
+                    if (!isChristmasClip) return
+                    setVideoSecond(event.currentTarget.currentTime)
+                  }}
                 >
                   Your browser does not support video playback.
                 </video>
@@ -96,15 +146,39 @@ export default function FootageViewTab({ reviewClip = null }: Props) {
                   </p>
                 </div>
               )}
+
+              {isChristmasClip && liveState && (
+                <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2 rounded-sm border border-brand/40 bg-black/70 px-2.5 py-1.5 backdrop-blur-md">
+                  <span className="inline-flex items-center gap-1.5 text-[0.55rem] font-semibold uppercase tracking-[0.2em] text-red-300">
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400" />
+                    Live
+                  </span>
+                  <span className="font-display text-[0.82rem] tracking-[0.12em] text-offwhite">
+                    {quarterLabel || '--'} · {clockLabel}
+                  </span>
+                </div>
+              )}
             </div>
             {active?.playbackUrl && (
               <div className="px-4 py-3 border-t border-[rgba(200,136,58,0.1)]">
                 <h3 className="font-display text-offwhite text-lg tracking-wide">{active.title}</h3>
                 <p className="text-[0.68rem] text-muted/55 font-light mt-1 tracking-wide uppercase">
-                  {isPastGameClip(active)
-                    ? 'Opened from Past Games'
-                    : 'Playback source: library pipeline (not upload ingest)'}
+                  {isChristmasClip
+                    ? `Live stats · OCR-aligned · ${quarterLabel || '--'} ${clockLabel}`
+                    : isPastGameClip(active)
+                      ? 'Opened from Past Games'
+                      : 'Playback source: library pipeline (not upload ingest)'}
                 </p>
+                {isChristmasClip && liveError && (
+                  <p className="mt-2 text-[0.66rem] text-red-300/80 font-light">
+                    Live stats unavailable: {liveError}
+                  </p>
+                )}
+                {isChristmasClip && liveLoading && !liveError && (
+                  <p className="mt-2 text-[0.66rem] text-muted/60 font-light">
+                    Loading live stats…
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -112,7 +186,13 @@ export default function FootageViewTab({ reviewClip = null }: Props) {
 
         {/* Right Panel - Home Team Stats */}
         <div className="min-h-[min(60vh,520px)]">
-          <TeamStatsPanel team="home" game={active?.game} />
+          <TeamStatsPanel
+            team="home"
+            game={active?.game}
+            liveTeam={isChristmasClip ? liveState?.homeTeam : undefined}
+            liveClock={isChristmasClip ? liveState?.clock : undefined}
+            livePeriod={isChristmasClip ? liveState?.period : undefined}
+          />
         </div>
       </div>
     </div>
