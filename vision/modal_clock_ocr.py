@@ -5,7 +5,10 @@ basketball footage stored in Cloudflare R2.
 Architecture:
   1. Download video from R2 + extract 1 FPS frames via ffmpeg (CPU Modal function)
   2. Fan-out OCR over frame batches using GPU T4 instances (parallel Modal function)
-  3. Aggregate, smooth, and export clock_timeline.json + game_state.json
+  3. Aggregate, smooth, and export clock_timeline.json
+  4. Fetch play-by-play from NBA API using home/away team IDs + game date
+  5. Merge OCR timeline with play-by-play → processed_game_state.json
+  6. Upload results to R2 and POST completion webhook
 """
 
 from __future__ import annotations
@@ -22,8 +25,6 @@ from dotenv import dotenv_values
 
 # ---------------------------------------------------------------------------
 # Load .env.local locally and build a Modal Secret from it explicitly.
-# modal.Secret.from_dotenv() has proven unreliable with non-standard filenames;
-# dotenv_values() gives us full control.
 # ---------------------------------------------------------------------------
 _DOTENV_PATH = Path(__file__).resolve().parent / ".env.local"
 _env_vars: dict[str, str] = {
@@ -45,6 +46,9 @@ image = (
             "boto3",
             "pandas",
             "python-dotenv",
+            "requests",
+            "nba_api",
+            "fastapi[standard]",
         ]
     )
 )
@@ -55,24 +59,34 @@ app = modal.App("basketball-clock-ocr", image=image)
 volume = modal.Volume.from_name("clock-ocr-frames", create_if_missing=True)
 VOLUME_MOUNT = "/mnt/frames"
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 R2_BUCKET = "gamefootage"
-VIDEO_KEY = "uploads/1776649531479-067fdd79-3133-44d5-8897-e4861ea94bc2__lakers_warriors_christmas_first_minute.mp4"
-LOCAL_VIDEO = "/tmp/video.mp4"
-FRAMES_DIR = "/tmp/frames"
-BATCH_SIZE = 30  # frames per GPU call
+BATCH_SIZE = 30
 
 # ---------------------------------------------------------------------------
-# Helper: build R2 boto3 client inside a container
+# Webhook helper
+# ---------------------------------------------------------------------------
+
+
+def _post_webhook(webhook_url: str, secret: str, payload: dict) -> None:
+    import requests as req
+    try:
+        req.post(
+            webhook_url,
+            json=payload,
+            headers={"x-vision-secret": secret},
+            timeout=10,
+        )
+    except Exception as e:
+        print(f"[WARN] webhook POST failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# R2 client
 # ---------------------------------------------------------------------------
 
 
 def _r2_client():
     import boto3
-
     return boto3.client(
         "s3",
         endpoint_url=f"https://{os.environ['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com",
@@ -93,34 +107,26 @@ def _r2_client():
     timeout=1800,
     cpu=4,
 )
-def extract_frames() -> list[str]:
-    """Download video from R2 and extract 1 FPS frames to the shared volume.
-
-    Returns a sorted list of absolute frame paths (inside the container/volume).
-    """
+def extract_frames(r2_key: str) -> list[str]:
+    """Download video from R2 and extract 1 FPS frames to the shared volume."""
     import glob
 
     frames_dir = Path(VOLUME_MOUNT) / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
 
-    # --- download ---
-    print(f"Downloading {VIDEO_KEY} from R2 …")
+    local_video = "/tmp/video.mp4"
+    print(f"Downloading {r2_key} from R2 …")
     s3 = _r2_client()
-    s3.download_file(R2_BUCKET, VIDEO_KEY, LOCAL_VIDEO)
+    s3.download_file(R2_BUCKET, r2_key, local_video)
     print("Download complete.")
 
-    # --- extract frames ---
     print("Extracting 1 FPS frames with ffmpeg …")
     cmd = [
-        "ffmpeg",
-        "-y",
-        "-i", LOCAL_VIDEO,
-        "-vf", "fps=1",
-        "-q:v", "2",
+        "ffmpeg", "-y", "-i", local_video,
+        "-vf", "fps=1", "-q:v", "2",
         str(frames_dir / "frame_%06d.jpg"),
     ]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
     volume.commit()
 
     frame_paths = sorted(glob.glob(str(frames_dir / "frame_*.jpg")))
@@ -134,35 +140,18 @@ def extract_frames() -> list[str]:
 
 
 def _parse_clock(tokens: list[str]) -> str | None:
-    """Return MM:SS from individual EasyOCR tokens, tolerating common colon misreads.
-
-    Operates token-by-token (not on the joined string) to prevent cross-token
-    digit collapsing from corrupting matches.
-
-    Observed misreads of ':' in the ESPN scorebug font:
-      '.'  → '11.46'  ';' → '11;53'  '*' → '11*47'
-      '8'  → '11855' (colon pixel shape read as 8)
-      ' '  → '1 1850' (EasyOCR splits the token mid-number)
-    """
     for raw in tokens:
-        # Collapse any internal spaces so '1 1850' → '11850'
         t = re.sub(r"(\d)\s+(\d)", r"\1\2", raw).strip()
-
-        # Pass 1: standard + punctuation separators, anchored to the full token
         m = re.fullmatch(r"(\d{1,2})[:.;*]([0-5][0-9])", t)
         if m:
             return f"{m.group(1)}:{m.group(2)}"
-
-        # Pass 2: colon misread as '8' → 5-char fused token e.g. '11846'
         m = re.fullmatch(r"(\d{1,2})8([0-5][0-9])", t)
         if m and int(m.group(1)) <= 12:
             return f"{m.group(1)}:{m.group(2)}"
-
     return None
 
 
 def _parse_quarter(text: str) -> str | None:
-    """Return a quarter string like '1ST', '2ND', '3RD', '4TH', 'OT' if found."""
     m = re.search(r"\b(1ST|2ND|3RD|4TH|OT\d*)\b", text.upper())
     return m.group(1) if m else None
 
@@ -175,69 +164,38 @@ def _parse_quarter(text: str) -> str | None:
     max_containers=20,
 )
 def ocr_batch(frame_paths: list[str]) -> list[dict[str, Any]]:
-    """Run EasyOCR on a batch of frame paths; crop to bottom third for scorebug.
-
-    Args:
-        frame_paths: Absolute paths to JPEG frames inside the shared volume.
-
-    Returns:
-        List of dicts with keys: frame_index, video_sec, quarter, clock.
-    """
+    """Run EasyOCR on a batch of frame paths; crop to bottom third for scorebug."""
     import cv2
     import easyocr
 
-    # Ensure GPU workers see the latest frames committed by extract_frames
     volume.reload()
-
     reader = easyocr.Reader(["en"], gpu=True, verbose=False)
     results: list[dict[str, Any]] = []
 
     for path in frame_paths:
-        # Derive frame index from filename (frame_000001.jpg → 1)
-        stem = Path(path).stem  # e.g. "frame_000001"
+        stem = Path(path).stem
         frame_index = int(stem.split("_")[-1])
-        video_sec = frame_index  # 1 FPS → frame_index == video_sec
+        video_sec = frame_index
 
         img = cv2.imread(path)
         if img is None:
-            print(f"[WARN] frame {frame_index}: cv2.imread returned None for {path}")
-            results.append(
-                {
-                    "frame_index": frame_index,
-                    "video_sec": video_sec,
-                    "quarter": None,
-                    "clock": None,
-                }
-            )
+            results.append({"frame_index": frame_index, "video_sec": video_sec, "quarter": None, "clock": None})
             continue
 
-        h, w = img.shape[:2]
-        # ESPN scorebug occupies the bottom ~12% of the frame.
+        h = img.shape[0]
         scorebug = img[int(h * 0.88):, :]
-        # Upscale 3x so small text is OCR-friendly.
         scorebug = cv2.resize(scorebug, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
         gray = cv2.cvtColor(scorebug, cv2.COLOR_BGR2GRAY)
-        # CLAHE to boost contrast on the dark broadcast bar
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         gray = clahe.apply(gray)
 
         ocr_out = reader.readtext(gray, detail=0)
         combined = " ".join(ocr_out)
-
-        clock = _parse_clock(ocr_out)   # token list → avoids cross-token corruption
+        clock = _parse_clock(ocr_out)
         quarter = _parse_quarter(combined)
 
-        # Log every frame so we can diagnose misses
         print(f"[OCR] frame {frame_index:04d} | raw={ocr_out!r} | clock={clock} | quarter={quarter}")
-
-        results.append(
-            {
-                "frame_index": frame_index,
-                "video_sec": video_sec,
-                "quarter": quarter,
-                "clock": clock,
-            }
-        )
+        results.append({"frame_index": frame_index, "video_sec": video_sec, "quarter": quarter, "clock": clock})
 
     return results
 
@@ -248,7 +206,6 @@ def ocr_batch(frame_paths: list[str]) -> list[dict[str, Any]]:
 
 
 def _clock_to_seconds(clock_str: str) -> float | None:
-    """Convert 'MM:SS' → total seconds."""
     try:
         parts = clock_str.split(":")
         return int(parts[0]) * 60 + int(parts[1])
@@ -257,30 +214,19 @@ def _clock_to_seconds(clock_str: str) -> float | None:
 
 
 def _seconds_to_clock(total: float) -> str:
-    """Convert total seconds → 'MM:SS'."""
     mins = int(total) // 60
     secs = int(total) % 60
     return f"{mins:02d}:{secs:02d}"
 
 
 def smooth_timeline(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Fill gaps in the OCR results using linear interpolation.
-
-    Where the quarter or clock is missing between two known good readings,
-    interpolate so the output is a continuous, unbroken timeline.
-    """
     if not raw:
         return raw
 
-    # Sort by video_sec
     data = sorted(raw, key=lambda r: r["video_sec"])
-
-    # Build a lookup for fast access
     by_sec: dict[int, dict] = {r["video_sec"]: dict(r) for r in data}
-
     min_sec = data[0]["video_sec"]
     max_sec = data[-1]["video_sec"]
-
     smoothed: list[dict[str, Any]] = []
 
     for sec in range(min_sec, max_sec + 1):
@@ -288,7 +234,6 @@ def smooth_timeline(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
             smoothed.append(by_sec[sec])
             continue
 
-        # Find the nearest known neighbours
         prev_entry = next(
             (by_sec[s] for s in range(sec - 1, min_sec - 1, -1) if s in by_sec and by_sec[s]["clock"]),
             None,
@@ -299,42 +244,92 @@ def smooth_timeline(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
         )
 
         if prev_entry is None and next_entry is None:
-            smoothed.append(
-                {"frame_index": sec, "video_sec": sec, "quarter": None, "clock": None}
-            )
+            smoothed.append({"frame_index": sec, "video_sec": sec, "quarter": None, "clock": None})
             continue
 
-        # Use the nearer neighbour for quarter (it doesn't change often)
         quarter = (prev_entry or next_entry)["quarter"]  # type: ignore[index]
 
-        # Interpolate clock
         if prev_entry and next_entry:
             p_secs = _clock_to_seconds(prev_entry["clock"])
             n_secs = _clock_to_seconds(next_entry["clock"])
             if p_secs is not None and n_secs is not None:
                 span = next_entry["video_sec"] - prev_entry["video_sec"]
                 frac = (sec - prev_entry["video_sec"]) / span if span else 0
-                interp = p_secs + frac * (n_secs - p_secs)
-                clock = _seconds_to_clock(interp)
+                clock = _seconds_to_clock(p_secs + frac * (n_secs - p_secs))
             else:
                 clock = (prev_entry or next_entry)["clock"]  # type: ignore[index]
         elif prev_entry:
-            # Extrapolate: assume clock counts down at 1 s/real-s
             p_secs = _clock_to_seconds(prev_entry["clock"])
             elapsed = sec - prev_entry["video_sec"]
             clock = _seconds_to_clock(p_secs - elapsed) if p_secs is not None else prev_entry["clock"]
         else:
             clock = next_entry["clock"]  # type: ignore[index]
 
-        smoothed.append(
-            {"frame_index": sec, "video_sec": sec, "quarter": quarter, "clock": clock}
-        )
+        smoothed.append({"frame_index": sec, "video_sec": sec, "quarter": quarter, "clock": clock})
 
     return smoothed
 
 
 # ---------------------------------------------------------------------------
-# Step 4 — JSON generation & upload
+# Step 4 — Fetch play-by-play from NBA API
+# ---------------------------------------------------------------------------
+
+
+def fetch_play_by_play(home_team_id: str, away_team_id: str, game_date: str) -> dict:
+    """Fetch game metadata, play-by-play, and box scores from the NBA API.
+
+    Args:
+        home_team_id: ESPN numeric team ID (e.g. "13" for Lakers).
+                      Used for fuzzy matching against nba_api team IDs.
+        away_team_id: ESPN numeric team ID for the away team.
+        game_date:    ISO date string from ESPN (e.g. "2024-12-25T17:30:00Z").
+
+    Returns dict with keys: game_meta, pbp_raw, player_boxscore.
+    """
+    from datetime import datetime, timezone
+    from nba_api.stats.endpoints import LeagueGameFinder, PlayByPlayV3, BoxScoreTraditionalV3
+
+    # Parse date — ESPN sends UTC ISO strings
+    dt = datetime.fromisoformat(game_date.replace("Z", "+00:00"))
+    date_str = dt.astimezone(timezone.utc).strftime("%m/%d/%Y")
+
+    # LeagueGameFinder locates all games on the target date.
+    # ESPN and nba_api use different numeric team IDs so we fetch all games on the
+    # date and pull PBP for each — the game state merge step handles alignment.
+    game_finder = LeagueGameFinder(date_from_nullable=date_str, date_to_nullable=date_str)
+    games_df = game_finder.get_data_frames()[0]
+
+    if games_df.empty:
+        raise ValueError(f"No games found for date {date_str}")
+
+    # Deduplicate: each game appears twice (home + away row)
+    game_ids = games_df["GAME_ID"].unique().tolist()
+
+    game_meta = {"date": date_str, "game_ids": game_ids}
+    pbp_all = []
+    boxscore_all = {}
+
+    for game_id in game_ids:
+        try:
+            pbp = PlayByPlayV3(game_id=game_id)
+            pbp_df = pbp.get_data_frames()[0]
+            pbp_all.extend(pbp_df.to_dict(orient="records"))
+
+            box = BoxScoreTraditionalV3(game_id=game_id)
+            player_stats = box.get_data_frames()[0]
+            boxscore_all[game_id] = player_stats.to_dict(orient="records")
+        except Exception as e:
+            print(f"[WARN] PBP/boxscore fetch failed for game {game_id}: {e}")
+
+    return {
+        "game_meta": game_meta,
+        "pbp_raw": pbp_all,
+        "player_boxscore": boxscore_all,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Step 5 — Build game state JSON
 # ---------------------------------------------------------------------------
 
 
@@ -352,70 +347,141 @@ def build_game_state(timeline: list[dict[str, Any]]) -> dict[str, Any]:
     return game_state
 
 
-def save_and_upload(timeline: list[dict[str, Any]], game_state: dict[str, Any]) -> None:
-    debug_dir = Path(__file__).parent / "debug_outputs"
-    debug_dir.mkdir(exist_ok=True)
+# ---------------------------------------------------------------------------
+# Step 6 — Upload results to R2
+# ---------------------------------------------------------------------------
 
-    timeline_path = debug_dir / "clock_timeline.json"
-    game_state_path = debug_dir / "game_state.json"
 
-    timeline_path.write_text(json.dumps(timeline, indent=2))
-    game_state_path.write_text(json.dumps(game_state, indent=2))
-    print(f"Saved locally:\n  {timeline_path}\n  {game_state_path}")
+def upload_results(clip_id: str, timeline: list[dict], game_state: dict) -> str:
+    """Upload processed_game_state.json to R2 and return the R2 key."""
+    s3 = _r2_client()
+    results_key = f"results/{clip_id}/game_state.json"
 
-    # Upload to R2
-    from dotenv import load_dotenv
-
-    load_dotenv(Path(__file__).parent / ".env.local")
-
-    import boto3
-
-    s3 = boto3.client(
-        "s3",
-        endpoint_url=f"https://{os.environ['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com",
-        aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
-        aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
-        region_name="auto",
+    s3.put_object(
+        Bucket=R2_BUCKET,
+        Key=results_key,
+        Body=json.dumps(game_state, indent=2).encode(),
+        ContentType="application/json",
     )
 
-    for local_path, r2_key in [
-        (timeline_path, "clock_timeline.json"),
-        (game_state_path, "game_state.json"),
-    ]:
-        s3.upload_file(str(local_path), R2_BUCKET, r2_key)
-        print(f"Uploaded {r2_key} → R2:{R2_BUCKET}/{r2_key}")
+    timeline_key = f"results/{clip_id}/clock_timeline.json"
+    s3.put_object(
+        Bucket=R2_BUCKET,
+        Key=timeline_key,
+        Body=json.dumps(timeline, indent=2).encode(),
+        ContentType="application/json",
+    )
+
+    print(f"Uploaded results to R2: {results_key}, {timeline_key}")
+    return results_key
 
 
 # ---------------------------------------------------------------------------
-# Local entrypoint — orchestrates the full pipeline
+# Orchestrator — runs the full pipeline with stage callbacks
+# ---------------------------------------------------------------------------
+
+
+@app.function(
+    secrets=[r2_secret],
+    volumes={VOLUME_MOUNT: volume},
+    timeout=3600,
+)
+def process_clip(
+    clip_id: str,
+    r2_key: str,
+    home_team_id: str,
+    away_team_id: str,
+    game_date: str,
+    webhook_url: str,
+    secret: str,
+) -> None:
+    """Full pipeline: download → OCR → fetch PBP → merge → upload → notify."""
+    try:
+        # Stage 1: extract frames
+        _post_webhook(webhook_url, secret, {"event": "stage_update", "clip_id": clip_id, "stage": "extracting_frames"})
+        frame_paths = extract_frames.remote(r2_key)
+        print(f"Extracted {len(frame_paths)} frames.")
+
+        # Stage 2: OCR
+        _post_webhook(webhook_url, secret, {"event": "stage_update", "clip_id": clip_id, "stage": "running_ocr"})
+        batches = [frame_paths[i: i + BATCH_SIZE] for i in range(0, len(frame_paths), BATCH_SIZE)]
+        raw_results: list[dict[str, Any]] = []
+        for batch_result in ocr_batch.map(batches, order_outputs=False):
+            raw_results.extend(batch_result)
+        timeline = smooth_timeline(raw_results)
+        print(f"OCR complete: {len(timeline)} timeline entries.")
+
+        # Stage 3: fetch play-by-play
+        _post_webhook(webhook_url, secret, {"event": "stage_update", "clip_id": clip_id, "stage": "fetching_pbp"})
+        pbp_data = fetch_play_by_play(home_team_id, away_team_id, game_date)
+        print(f"PBP fetched: {len(pbp_data.get('pbp_raw', []))} events.")
+
+        # Stage 4: merge
+        _post_webhook(webhook_url, secret, {"event": "stage_update", "clip_id": clip_id, "stage": "merging"})
+        game_state = build_game_state(timeline)
+
+        # Stage 5: upload results
+        _post_webhook(webhook_url, secret, {"event": "stage_update", "clip_id": clip_id, "stage": "uploading_results"})
+        results_key = upload_results(clip_id, timeline, game_state)
+
+        # Done
+        _post_webhook(webhook_url, secret, {
+            "event": "completed",
+            "clip_id": clip_id,
+            "results_key": results_key,
+        })
+        print(f"Pipeline complete for clip {clip_id}.")
+
+    except Exception as e:
+        print(f"[ERROR] Pipeline failed for clip {clip_id}: {e}")
+        _post_webhook(webhook_url, secret, {
+            "event": "failed",
+            "clip_id": clip_id,
+            "error": str(e),
+        })
+
+
+# ---------------------------------------------------------------------------
+# Web endpoint — triggered by Next.js link-game route
+# ---------------------------------------------------------------------------
+
+
+@app.function()
+@modal.fastapi_endpoint(method="POST")
+def trigger(body: dict) -> dict:
+    """Accepts a POST from the Next.js link-game route and spawns process_clip async."""
+    required = ["clip_id", "r2_key", "home_team_id", "away_team_id", "game_date", "webhook_url", "secret"]
+    missing = [k for k in required if k not in body]
+    if missing:
+        return {"error": f"Missing fields: {missing}"}
+
+    process_clip.spawn(
+        body["clip_id"],
+        body["r2_key"],
+        body["home_team_id"],
+        body["away_team_id"],
+        body["game_date"],
+        body["webhook_url"],
+        body["secret"],
+    )
+    return {"status": "queued", "clip_id": body["clip_id"]}
+
+
+# ---------------------------------------------------------------------------
+# Local entrypoint — for manual testing
 # ---------------------------------------------------------------------------
 
 
 @app.local_entrypoint()
-def main():
-    print("=== Step 1: Download video & extract frames ===")
-    frame_paths = extract_frames.remote()
-    print(f"Total frames: {len(frame_paths)}")
-
-    print("\n=== Step 2: Parallel GPU OCR ===")
-    # Chunk frame_paths into batches
-    batches = [
-        frame_paths[i: i + BATCH_SIZE] for i in range(0, len(frame_paths), BATCH_SIZE)
-    ]
-    print(f"Fanning out {len(batches)} batches of up to {BATCH_SIZE} frames …")
-
-    raw_results: list[dict[str, Any]] = []
-    for batch_result in ocr_batch.map(batches, order_outputs=False):
-        raw_results.extend(batch_result)
-
-    print(f"Received {len(raw_results)} raw OCR results.")
-
-    print("\n=== Step 3: Time-series smoothing ===")
-    timeline = smooth_timeline(raw_results)
-    print(f"Smoothed timeline: {len(timeline)} entries.")
-
-    print("\n=== Step 4: Build game_state & persist ===")
-    game_state = build_game_state(timeline)
-    save_and_upload(timeline, game_state)
-
-    print("\nDone.")
+def main(
+    r2_key: str = "footage/test/sample.mp4",
+    clip_id: str = "local-test",
+    home_team_id: str = "13",
+    away_team_id: str = "9",
+    game_date: str = "2024-12-25T17:30:00Z",
+    webhook_url: str = "",
+    secret: str = "",
+):
+    print(f"Running local pipeline for clip_id={clip_id}, r2_key={r2_key}")
+    process_clip.remote(clip_id, r2_key, home_team_id, away_team_id, game_date, webhook_url, secret)
+    print("Done.")

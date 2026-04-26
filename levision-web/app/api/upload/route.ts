@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
@@ -29,22 +30,14 @@ function createR2Client() {
   })
 }
 
-function toUploadKey(filename: string) {
-  const extension = filename.split('.').pop()?.toLowerCase() ?? 'mp4'
-  const baseName = filename.replace(/\.[^.]+$/, '')
-  const safeBaseName = baseName
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-zA-Z0-9-_]/g, '')
-    .slice(0, 80) || 'video'
-
-  return `uploads/${Date.now()}-${randomUUID()}__${safeBaseName}.${extension}`
+function sanitizeExt(filename: string): string {
+  const raw = filename.split('.').pop()?.toLowerCase() ?? 'mp4'
+  return raw.replace(/[^a-z0-9]/g, '').slice(0, 10) || 'mp4'
 }
 
 function getContentLength(request: Request) {
   const header = request.headers.get('content-length')
   if (!header) return null
-
   const parsed = Number.parseInt(header, 10)
   return Number.isFinite(parsed) ? parsed : null
 }
@@ -63,25 +56,25 @@ export async function POST(request: Request) {
       )
     }
 
-    let formData: FormData
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+    let formData: FormData
     try {
       formData = await request.formData()
     } catch (error) {
       const contentLength = getContentLength(request)
-
       if (
         isFormDataParseFailure(error) ||
         (contentLength !== null && contentLength > MAX_UPLOAD_SIZE_BYTES)
       ) {
         return NextResponse.json({ error: FILE_TOO_LARGE_MESSAGE }, { status: 413 })
       }
-
       throw error
     }
 
     const fileEntry = formData.get('file')
-
     if (!(fileEntry instanceof File)) {
       return NextResponse.json({ error: 'A file field is required.' }, { status: 400 })
     }
@@ -94,7 +87,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Only video files are allowed.' }, { status: 400 })
     }
 
-    const key = toUploadKey(fileEntry.name)
+    const clipId = randomUUID()
+    const ext = sanitizeExt(fileEntry.name)
+    const key = `footage/${user.id}/${clipId}.${ext}`
     const body = Buffer.from(await fileEntry.arrayBuffer())
 
     await createR2Client().send(
@@ -109,7 +104,22 @@ export async function POST(request: Request) {
     const publicBaseUrl = process.env.R2_PUBLIC_BASE_URL?.replace(/\/$/, '')
     const url = publicBaseUrl ? `${publicBaseUrl}/${key}` : null
 
-    return NextResponse.json({ key, url })
+    const { error: dbError } = await supabase.from('footage').insert({
+      id: clipId,
+      r2_key: key,
+      r2_url: url,
+      filename: fileEntry.name,
+      uploaded_by: user.id,
+      file_size: fileEntry.size,
+      vision_status: 'awaiting_game',
+    })
+
+    if (dbError) {
+      console.error('footage insert failed', dbError)
+      return NextResponse.json({ error: 'Upload saved but metadata write failed.' }, { status: 500 })
+    }
+
+    return NextResponse.json({ key, url, clipId })
   } catch (error) {
     console.error('Upload route failed', error)
     return NextResponse.json({ error: 'Unable to upload file right now.' }, { status: 500 })

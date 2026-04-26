@@ -15,7 +15,7 @@ function buildSeasons() {
 const SEASONS = buildSeasons()
 
 // ── Upload queue types ────────────────────────────────────────────────────────
-type UploadStatus = 'queued' | 'uploading' | 'uploaded' | 'invalid' | 'failed'
+type UploadStatus = 'queued' | 'uploading' | 'uploaded' | 'processing' | 'ready' | 'invalid' | 'failed'
 
 type UploadItem = {
   id: string
@@ -23,6 +23,17 @@ type UploadItem = {
   status: UploadStatus
   message?: string
   uploadedUrl?: string
+  clipId?: string
+  visionStage?: string
+}
+
+const STAGE_LABELS: Record<string, string> = {
+  downloading:       'Downloading clip...',
+  extracting_frames: 'Extracting frames...',
+  running_ocr:       'Reading game clock...',
+  fetching_pbp:      'Fetching play-by-play...',
+  merging:           'Building game timeline...',
+  uploading_results: 'Saving results...',
 }
 
 const ACCEPTED_FORMATS = '.mp4,.mov,.avi,.mkv,.webm,.m4v'
@@ -78,13 +89,7 @@ function DropdownList<T>({
 }
 
 // ── Season picker ─────────────────────────────────────────────────────────────
-function SeasonPicker({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange: (v: string) => void
-}) {
+function SeasonPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -150,12 +155,7 @@ function SeasonPicker({
 
 // ── Team picker ───────────────────────────────────────────────────────────────
 function TeamPicker({
-  label,
-  placeholder,
-  allTeams,
-  selected,
-  onSelect,
-  disabled,
+  label, placeholder, allTeams, selected, onSelect, disabled,
 }: {
   label: string
   placeholder: string
@@ -174,11 +174,10 @@ function TeamPicker({
   const filtered = query.trim().length === 0
     ? allTeams.slice(0, 30)
     : allTeams
-        .filter(
-          (t) =>
-            t.displayName.toLowerCase().includes(query.toLowerCase()) ||
-            t.abbreviation.toLowerCase().includes(query.toLowerCase()) ||
-            t.location.toLowerCase().includes(query.toLowerCase()),
+        .filter((t) =>
+          t.displayName.toLowerCase().includes(query.toLowerCase()) ||
+          t.abbreviation.toLowerCase().includes(query.toLowerCase()) ||
+          t.location.toLowerCase().includes(query.toLowerCase()),
         )
         .slice(0, 8)
 
@@ -192,9 +191,7 @@ function TeamPicker({
     return () => document.removeEventListener('mousedown', onClickOutside)
   }, [close])
 
-  useEffect(() => {
-    setHighlightedIndex(-1)
-  }, [query])
+  useEffect(() => { setHighlightedIndex(-1) }, [query])
 
   useEffect(() => {
     if (highlightedIndex >= 0) itemRefs.current[highlightedIndex]?.scrollIntoView({ block: 'nearest' })
@@ -279,6 +276,39 @@ function GamesSkeleton() {
   )
 }
 
+// ── Status badge ──────────────────────────────────────────────────────────────
+function StatusBadge({ item }: { item: UploadItem }) {
+  const isProcessing = item.status === 'processing'
+  const stageLabel = isProcessing && item.visionStage ? STAGE_LABELS[item.visionStage] ?? item.visionStage : null
+
+  const color =
+    item.status === 'invalid' || item.status === 'failed' ? 'text-accent/80'
+    : item.status === 'ready' ? 'text-brand/80'
+    : item.status === 'processing' ? 'text-brand/60 animate-pulse'
+    : item.status === 'uploaded' ? 'text-muted'
+    : item.status === 'uploading' ? 'text-muted animate-pulse'
+    : 'text-muted'
+
+  return (
+    <div>
+      <p className={`text-[0.7rem] mt-0.5 font-body ${color}`}>{item.message}</p>
+      {stageLabel && (
+        <p className="text-[0.65rem] mt-0.5 font-body text-brand/40">{stageLabel}</p>
+      )}
+    </div>
+  )
+}
+
+// ── SSE event shape ───────────────────────────────────────────────────────────
+type VisionUpdateEvent = {
+  type: 'vision_update'
+  clip_id: string
+  event: 'stage_update' | 'completed' | 'failed'
+  stage: string | null
+  results_key: string | null
+  error: string | null
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export default function UploadTab() {
   // Game context
@@ -288,7 +318,7 @@ export default function UploadTab() {
   const [team1, setTeam1] = useState<ESPNTeam | null>(null)
   const [team2, setTeam2] = useState<ESPNTeam | null>(null)
 
-  // Games search (debounced)
+  // Games search
   const [games, setGames] = useState<ParsedGame[]>([])
   const [gamesLoading, setGamesLoading] = useState(false)
   const [gamesError, setGamesError] = useState<string | null>(null)
@@ -310,7 +340,38 @@ export default function UploadTab() {
       .finally(() => setTeamsLoading(false))
   }, [])
 
-  // Debounced game fetch — 350ms after any of season / team1 / team2 changes
+  // SSE: subscribe to processing updates
+  useEffect(() => {
+    const es = new EventSource('/api/events')
+
+    es.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data) as { type?: string }
+        if (data.type !== 'vision_update') return
+        const update = data as VisionUpdateEvent
+
+        setUploads((prev) =>
+          prev.map((item) => {
+            if (item.clipId !== update.clip_id) return item
+            if (update.event === 'stage_update') {
+              return { ...item, visionStage: update.stage ?? undefined }
+            }
+            if (update.event === 'completed') {
+              return { ...item, status: 'ready', message: 'Analysis complete.', visionStage: undefined }
+            }
+            if (update.event === 'failed') {
+              return { ...item, status: 'failed', message: update.error ?? 'Analysis failed.', visionStage: undefined }
+            }
+            return item
+          })
+        )
+      } catch { /* malformed event */ }
+    }
+
+    return () => es.close()
+  }, [])
+
+  // Debounced game fetch
   useEffect(() => {
     if (!season || !team1) {
       setGames([])
@@ -323,7 +384,6 @@ export default function UploadTab() {
     setGamesError(null)
 
     const controller = new AbortController()
-
     const timer = setTimeout(() => {
       const params = new URLSearchParams({ season, team_one_id: team1.id })
       if (team2) params.set('team_two_id', team2.id)
@@ -346,7 +406,6 @@ export default function UploadTab() {
     return () => { clearTimeout(timer); controller.abort() }
   }, [season, team1?.id, team2?.id])
 
-  // Clear team2 when team1 is cleared
   useEffect(() => { if (!team1) setTeam2(null) }, [team1])
 
   // ── Upload handlers ─────────────────────────────────────────────────────────
@@ -368,7 +427,7 @@ export default function UploadTab() {
 
   const confirmUpload = async () => {
     const queued = uploads.filter((item) => item.status === 'queued')
-    if (queued.length === 0) return
+    if (queued.length === 0 || !selectedGame) return
 
     setIsUploading(true)
     setUploads((prev) =>
@@ -381,17 +440,49 @@ export default function UploadTab() {
       queued.map(async (item) => {
         const formData = new FormData()
         formData.append('file', item.file)
-        if (selectedGame) {
-          formData.append('espn_game_id', selectedGame.espn_game_id)
-          formData.append('game_label', selectedGame.label)
-        }
         try {
-          const res = await fetch('/api/upload', { method: 'POST', body: formData })
-          const payload = (await res.json()) as { key?: string; url?: string; error?: string }
-          if (!res.ok) return { id: item.id, status: 'failed' as UploadStatus, message: payload.error ?? 'Upload failed. Blame the refs.', uploadedUrl: undefined }
-          return { id: item.id, status: 'uploaded' as UploadStatus, message: 'Footage locked in. The film does not lie.', uploadedUrl: payload.url }
+          // Step 1: upload file to R2 + create footage row
+          const uploadRes = await fetch('/api/upload', { method: 'POST', body: formData })
+          const uploadPayload = (await uploadRes.json()) as { key?: string; url?: string; clipId?: string; error?: string }
+          if (!uploadRes.ok) {
+            return { id: item.id, status: 'failed' as UploadStatus, message: uploadPayload.error ?? 'Upload failed. Blame the refs.' }
+          }
+
+          const clipId = uploadPayload.clipId!
+
+          // Step 2: link to game — this triggers the Modal pipeline
+          const linkRes = await fetch(`/api/footage/${clipId}/link-game`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              espn_game_id: selectedGame.espn_game_id,
+              home_team_id: selectedGame.home_team_id,
+              away_team_id: selectedGame.away_team_id,
+              game_date: selectedGame.date,
+              game_season: season,
+            }),
+          })
+
+          if (!linkRes.ok) {
+            return {
+              id: item.id,
+              status: 'uploaded' as UploadStatus,
+              message: 'Uploaded but failed to link game.',
+              uploadedUrl: uploadPayload.url ?? undefined,
+              clipId,
+            }
+          }
+
+          return {
+            id: item.id,
+            status: 'processing' as UploadStatus,
+            message: 'Footage locked in. Analyzing...',
+            uploadedUrl: uploadPayload.url ?? undefined,
+            clipId,
+            visionStage: 'downloading',
+          }
         } catch {
-          return { id: item.id, status: 'failed' as UploadStatus, message: 'Upload failed. Blame the refs.', uploadedUrl: undefined }
+          return { id: item.id, status: 'failed' as UploadStatus, message: 'Upload failed. Blame the refs.' }
         }
       }),
     )
@@ -422,7 +513,6 @@ export default function UploadTab() {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
           <SeasonPicker value={season} onChange={setSeason} />
-
           <TeamPicker
             label="Team 1"
             placeholder={teamsLoading ? 'Loading...' : 'Search teams…'}
@@ -431,7 +521,6 @@ export default function UploadTab() {
             onSelect={(t) => { setTeam1(t); if (!t) setTeam2(null) }}
             disabled={teamsLoading}
           />
-
           <TeamPicker
             label="Team 2"
             placeholder={team1 ? 'Narrow to head-to-head…' : 'Select Team 1 first'}
@@ -442,25 +531,20 @@ export default function UploadTab() {
           />
         </div>
 
-        {/* Games results */}
         {!team1 && (
           <p className="text-[0.74rem] text-muted/60 font-light">
             Select a season and team to load completed games.
           </p>
         )}
-
         {team1 && gamesLoading && <GamesSkeleton />}
-
         {team1 && !gamesLoading && gamesError && (
           <p className="text-[0.74rem] text-accent font-light mt-3">{gamesError}</p>
         )}
-
         {team1 && !gamesLoading && !gamesError && games.length === 0 && (
           <p className="text-[0.74rem] text-muted/60 font-light mt-3">
             No completed games found for this selection.
           </p>
         )}
-
         {!gamesLoading && games.length > 0 && (
           <div>
             <p className="text-[0.7rem] text-muted/70 font-light mb-3">
@@ -501,113 +585,103 @@ export default function UploadTab() {
 
       {/* ── Step 2: Drop zone ── */}
       <div className={`transition-opacity duration-300 ${selectedGame ? 'opacity-100' : 'opacity-40 pointer-events-none select-none'}`}>
-      <div className="flex items-center gap-3 mb-4">
-        <span className={`flex items-center justify-center w-5 h-5 rounded-full border text-[0.62rem] font-display tracking-wider shrink-0 transition-colors duration-300 ${selectedGame ? 'border-brand/50 text-brand' : 'border-white/20 text-muted'}`}>2</span>
-        <p className={`uppercase text-[0.68rem] tracking-[0.22em] font-medium font-body transition-colors duration-300 ${selectedGame ? 'text-brand' : 'text-muted'}`}>
-          Drop Footage
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={() => selectedGame && fileInputRef.current?.click()}
-        onDragOver={(e) => { if (!selectedGame) return; e.preventDefault(); setIsDragging(true) }}
-        onDragLeave={() => setIsDragging(false)}
-        onDrop={(e) => { e.preventDefault(); setIsDragging(false); if (selectedGame) queueFiles(e.dataTransfer.files) }}
-        className={`w-full border border-dashed rounded-sm p-12 text-center transition-colors duration-200 mb-5 cursor-pointer ${
-          isDragging
-            ? 'border-brand bg-[rgba(200,136,58,0.05)]'
-            : 'border-[rgba(200,136,58,0.28)] bg-[rgba(200,136,58,0.02)] hover:border-brand hover:bg-[rgba(200,136,58,0.05)]'
-        }`}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={ACCEPTED_FORMATS}
-          multiple
-          className="hidden"
-          onChange={(e) => { queueFiles(e.target.files); e.target.value = '' }}
-        />
-        <div className="font-display text-[1.3rem] tracking-[0.08em] text-offwhite mb-2">
-          Drop footage here or click to browse
+        <div className="flex items-center gap-3 mb-4">
+          <span className={`flex items-center justify-center w-5 h-5 rounded-full border text-[0.62rem] font-display tracking-wider shrink-0 transition-colors duration-300 ${selectedGame ? 'border-brand/50 text-brand' : 'border-white/20 text-muted'}`}>2</span>
+          <p className={`uppercase text-[0.68rem] tracking-[0.22em] font-medium font-body transition-colors duration-300 ${selectedGame ? 'text-brand' : 'text-muted'}`}>
+            Drop Footage
+          </p>
         </div>
-        <div className="text-[0.76rem] text-muted font-light mb-4">
-          Game film, practice sessions, highlight cuts
-        </div>
-        {selectedGame && (
-          <div className="inline-flex items-center gap-2 border border-brand/30 bg-brand/5 rounded-sm px-3 py-1.5 mb-3">
-            <span className="w-1.5 h-1.5 rounded-full bg-brand shrink-0" />
-            <span className="text-[0.72rem] font-body text-offwhite">
-              Will link to {selectedGame.label}
-            </span>
+        <button
+          type="button"
+          onClick={() => selectedGame && fileInputRef.current?.click()}
+          onDragOver={(e) => { if (!selectedGame) return; e.preventDefault(); setIsDragging(true) }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={(e) => { e.preventDefault(); setIsDragging(false); if (selectedGame) queueFiles(e.dataTransfer.files) }}
+          className={`w-full border border-dashed rounded-sm p-12 text-center transition-colors duration-200 mb-5 cursor-pointer ${
+            isDragging
+              ? 'border-brand bg-[rgba(200,136,58,0.05)]'
+              : 'border-[rgba(200,136,58,0.28)] bg-[rgba(200,136,58,0.02)] hover:border-brand hover:bg-[rgba(200,136,58,0.05)]'
+          }`}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ACCEPTED_FORMATS}
+            multiple
+            className="hidden"
+            onChange={(e) => { queueFiles(e.target.files); e.target.value = '' }}
+          />
+          <div className="font-display text-[1.3rem] tracking-[0.08em] text-offwhite mb-2">
+            Drop footage here or click to browse
           </div>
-        )}
-        <div className="flex gap-2 justify-center">
-          {['MP4', 'MOV', 'AVI', 'MKV'].map((fmt) => (
-            <span key={fmt} className="text-[0.62rem] tracking-[0.12em] px-2.5 py-1 border border-[rgba(200,136,58,0.18)] rounded-sm text-muted">
-              {fmt}
-            </span>
-          ))}
-        </div>
-      </button>
-
-      {/* ── Upload queue ── */}
-      {uploads.length > 0 && (
-        <div className="border border-[rgba(200,136,58,0.12)] rounded-sm bg-[rgba(200,136,58,0.015)]">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[rgba(200,136,58,0.12)]">
-            <p className="text-[0.74rem] tracking-[0.12em] uppercase text-muted">Selected files</p>
-            <button
-              type="button"
-              onClick={confirmUpload}
-              disabled={isUploading || !uploads.some((item) => item.status === 'queued')}
-              className="text-[0.68rem] tracking-[0.12em] uppercase px-3 py-1.5 rounded-sm border border-brand/40 text-offwhite bg-brand/10 hover:bg-brand/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
-            >
-              {isUploading ? 'Uploading...' : 'Upload queued files'}
-            </button>
+          <div className="text-[0.76rem] text-muted font-light mb-4">
+            Game film, practice sessions, highlight cuts
           </div>
-          <div className="divide-y divide-[rgba(200,136,58,0.08)]">
-            {uploads.map((item) => (
-              <div
-                key={item.id}
-                className="px-4 py-3 flex items-start justify-between gap-4 transition-opacity duration-300"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm text-offwhite truncate font-body">{item.file.name}</p>
-                  {selectedGame && item.status === 'queued' && (
-                    <p className="text-[0.68rem] text-brand/70 mt-0.5 font-body">{selectedGame.label}</p>
-                  )}
-                  <p className={`text-[0.7rem] mt-0.5 font-body ${
-                    item.status === 'invalid' || item.status === 'failed' ? 'text-accent/80'
-                    : item.status === 'uploaded' ? 'text-brand/80'
-                    : item.status === 'uploading' ? 'text-muted animate-pulse'
-                    : 'text-muted'
-                  }`}>
-                    {item.message}
-                  </p>
-                  {item.uploadedUrl && (
-                    <a href={item.uploadedUrl} target="_blank" rel="noreferrer" className="inline-block mt-1 text-[0.68rem] text-brand hover:text-brand/80 transition-colors duration-200">
-                      Open uploaded file
-                    </a>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => removeUpload(item.id)}
-                  className="text-[0.64rem] tracking-[0.1em] uppercase text-muted hover:text-offwhite transition-colors duration-200 shrink-0 mt-0.5"
-                >
-                  Remove
-                </button>
-              </div>
+          {selectedGame && (
+            <div className="inline-flex items-center gap-2 border border-brand/30 bg-brand/5 rounded-sm px-3 py-1.5 mb-3">
+              <span className="w-1.5 h-1.5 rounded-full bg-brand shrink-0" />
+              <span className="text-[0.72rem] font-body text-offwhite">
+                Will link to {selectedGame.label}
+              </span>
+            </div>
+          )}
+          <div className="flex gap-2 justify-center">
+            {['MP4', 'MOV', 'AVI', 'MKV'].map((fmt) => (
+              <span key={fmt} className="text-[0.62rem] tracking-[0.12em] px-2.5 py-1 border border-[rgba(200,136,58,0.18)] rounded-sm text-muted">
+                {fmt}
+              </span>
             ))}
           </div>
-        </div>
-      )}
+        </button>
 
-      {uploads.length === 0 && (
-        <p className="text-[0.74rem] text-muted/50 font-light">
-          No footage yet. LeBron didn&apos;t become LeBron by skipping film.
-        </p>
-      )}
-      </div>{/* end step 2 wrapper */}
+        {/* ── Upload queue ── */}
+        {uploads.length > 0 && (
+          <div className="border border-[rgba(200,136,58,0.12)] rounded-sm bg-[rgba(200,136,58,0.015)]">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[rgba(200,136,58,0.12)]">
+              <p className="text-[0.74rem] tracking-[0.12em] uppercase text-muted">Selected files</p>
+              <button
+                type="button"
+                onClick={confirmUpload}
+                disabled={isUploading || !uploads.some((item) => item.status === 'queued')}
+                className="text-[0.68rem] tracking-[0.12em] uppercase px-3 py-1.5 rounded-sm border border-brand/40 text-offwhite bg-brand/10 hover:bg-brand/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
+              >
+                {isUploading ? 'Uploading...' : 'Upload queued files'}
+              </button>
+            </div>
+            <div className="divide-y divide-[rgba(200,136,58,0.08)]">
+              {uploads.map((item) => (
+                <div key={item.id} className="px-4 py-3 flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm text-offwhite truncate font-body">{item.file.name}</p>
+                    {selectedGame && item.status === 'queued' && (
+                      <p className="text-[0.68rem] text-brand/70 mt-0.5 font-body">{selectedGame.label}</p>
+                    )}
+                    <StatusBadge item={item} />
+                    {item.uploadedUrl && (
+                      <a href={item.uploadedUrl} target="_blank" rel="noreferrer" className="inline-block mt-1 text-[0.68rem] text-brand hover:text-brand/80 transition-colors duration-200">
+                        Open uploaded file
+                      </a>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeUpload(item.id)}
+                    className="text-[0.64rem] tracking-[0.1em] uppercase text-muted hover:text-offwhite transition-colors duration-200 shrink-0 mt-0.5"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {uploads.length === 0 && (
+          <p className="text-[0.74rem] text-muted/50 font-light">
+            No footage yet. LeBron didn&apos;t become LeBron by skipping film.
+          </p>
+        )}
+      </div>
     </div>
   )
 }

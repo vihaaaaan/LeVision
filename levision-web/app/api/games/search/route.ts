@@ -25,8 +25,10 @@ type ESPNEvent = {
 export type ParsedGame = {
   espn_game_id: string
   date: string
+  home_team_id: string
   home_team: string
   home_abbrev: string
+  away_team_id: string
   away_team: string
   away_abbrev: string
   home_score: string | null
@@ -71,12 +73,14 @@ function parseEvent(event: ESPNEvent): ParsedGame {
   const away = comp?.competitors?.find((c) => c.homeAway === 'away')
   const status = comp?.status?.type
   return {
-    espn_game_id: event.id,
-    date:         event.date,
-    home_team:    home?.team.displayName  ?? 'Home',
-    home_abbrev:  home?.team.abbreviation ?? '',
-    away_team:    away?.team.displayName  ?? 'Away',
-    away_abbrev:  away?.team.abbreviation ?? '',
+    espn_game_id:  event.id,
+    date:          event.date,
+    home_team_id:  home?.team.id          ?? '',
+    home_team:     home?.team.displayName  ?? 'Home',
+    home_abbrev:   home?.team.abbreviation ?? '',
+    away_team_id:  away?.team.id          ?? '',
+    away_team:     away?.team.displayName  ?? 'Away',
+    away_abbrev:   away?.team.abbreviation ?? '',
     home_score:   parseScore(home?.score),
     away_score:   parseScore(away?.score),
     completed:    status?.completed ?? false,
@@ -108,9 +112,6 @@ export async function GET(request: Request) {
         fetchTeamSchedule(team_one_id, season),
         fetchTeamSchedule(team_two_id, season),
       ])
-      console.log("sched1: ", sched1)
-      console.log("sched2: ", sched2)
-
       const parsed1 = sched1.map(parseEvent).filter((g) => g.completed)
       const parsed2 = sched2.map(parseEvent).filter((g) => g.completed)
       const ids2 = new Set(parsed2.map((g) => g.espn_game_id))

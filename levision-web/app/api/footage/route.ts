@@ -11,7 +11,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from('footage')
-    .select('id, filename, r2_key, r2_url, game_label, espn_game_id, created_at')
+    .select('id, filename, r2_key, r2_url, espn_game_id, home_team_id, away_team_id, game_date, game_season, vision_status, vision_stage, created_at')
     .order('created_at', { ascending: false })
     .limit(50)
 
