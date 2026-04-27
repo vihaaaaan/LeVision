@@ -97,8 +97,21 @@ export type LiveGameState = {
   awayTeam: LiveTeamState
 }
 
+export type LivePlay = {
+  id: string
+  actionNumber: number
+  description: string
+  period: number
+  clock: string
+  scoreHome: string | null
+  scoreAway: string | null
+  teamAbbrev: string | null
+  videoAvailable: boolean
+}
+
 export type LiveGameTimeline = {
   minSecond: number
   maxSecond: number
   snapshots: Record<string, LiveGameState>
+  plays: LivePlay[]
 }

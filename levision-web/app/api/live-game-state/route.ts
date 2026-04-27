@@ -3,6 +3,7 @@ import path from 'path'
 import { NextResponse } from 'next/server'
 import type {
   LiveGameState,
+  LivePlay,
   LiveGameTimeline,
   LivePlayerState,
   LiveTeamState,
@@ -11,6 +12,7 @@ import type {
 const ROOT_DIR = process.cwd()
 const STATE_PATH = path.resolve(ROOT_DIR, '../vision/processed_game_state.json')
 const PLAYER_BOX_PATH = path.resolve(ROOT_DIR, '../vision/data/nba/player_boxscore.json')
+const PBP_PATH = path.resolve(ROOT_DIR, '../vision/data/nba/pbp_raw.json')
 
 type PlayerLookupEntry = { name: string; teamName: string }
 type PlayerLookup = Map<number, PlayerLookupEntry>
@@ -33,6 +35,18 @@ type RawSnapshot = {
   period?: number
   home_team?: RawTeamState
   visitor_team?: RawTeamState
+}
+
+type RawPlay = {
+  actionNumber?: number
+  description?: string
+  period?: number
+  clock?: string
+  scoreHome?: string
+  scoreAway?: string
+  teamTricode?: string
+  videoAvailable?: number
+  actionId?: number
 }
 
 function buildPlayerLookup(entries: Array<Record<string, unknown>>): PlayerLookup {
@@ -125,18 +139,46 @@ function buildSnapshots(
   return snapshots
 }
 
+function formatPlayClock(clock: string | undefined): string {
+  if (!clock) return '--:--'
+  const match = clock.match(/PT(?:(\d+)M)?([\d.]+)S/i)
+  if (!match) return clock
+  const minutes = Number(match[1] ?? 0)
+  const seconds = Math.floor(Number(match[2] ?? 0))
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+function buildPlays(rawPlays: RawPlay[]): LivePlay[] {
+  return rawPlays
+    .filter((play) => typeof play.description === 'string' && typeof play.period === 'number')
+    .map((play, index) => ({
+      id: String(play.actionId ?? play.actionNumber ?? index),
+      actionNumber: Number(play.actionNumber ?? index),
+      description: play.description ?? '',
+      period: Number(play.period ?? 0),
+      clock: formatPlayClock(play.clock),
+      scoreHome: play.scoreHome || null,
+      scoreAway: play.scoreAway || null,
+      teamAbbrev: play.teamTricode || null,
+      videoAvailable: Boolean(play.videoAvailable),
+    }))
+}
+
 export async function GET() {
   try {
-    const [stateRaw, playerBoxRaw] = await Promise.all([
+    const [stateRaw, playerBoxRaw, pbpRaw] = await Promise.all([
       readFile(STATE_PATH, 'utf8'),
       readFile(PLAYER_BOX_PATH, 'utf8'),
+      readFile(PBP_PATH, 'utf8'),
     ])
 
     const state = JSON.parse(stateRaw) as Record<string, RawSnapshot>
     const playerBox = JSON.parse(playerBoxRaw) as Array<Record<string, unknown>>
+    const rawPlays = JSON.parse(pbpRaw) as RawPlay[]
     const lookup = buildPlayerLookup(playerBox)
 
     const snapshots = buildSnapshots(state, lookup)
+    const plays = buildPlays(rawPlays)
     const secondKeys = Object.keys(snapshots)
       .map((k) => Number(k))
       .filter((n) => Number.isFinite(n))
@@ -150,6 +192,7 @@ export async function GET() {
       minSecond: secondKeys[0],
       maxSecond: secondKeys[secondKeys.length - 1],
       snapshots,
+      plays,
     }
 
     return NextResponse.json(timeline)
