@@ -4,6 +4,7 @@ import type { Game, LiveTeamState } from '@/lib/types'
 import { useState, useEffect, useMemo } from 'react'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
+import StatBurst from '@/components/StatBurst'
 
 type DisplayPlayer = {
   name: string
@@ -209,23 +210,23 @@ export default function TeamStatsPanel({
                     {/* Stats */}
                     <div className="flex items-center gap-3 text-center">
                       <div>
-                        <div className="font-body text-offwhite text-sm font-bold">{player.points}</div>
+                        <div className="font-body text-offwhite text-sm font-bold"><StatBurst value={player.points}>{player.points}</StatBurst></div>
                         <div className="text-[0.45rem] uppercase tracking-[0.15em] text-muted">PTS</div>
                       </div>
                       <div>
-                        <div className="font-body text-offwhite text-sm font-bold">{player.assists}</div>
+                        <div className="font-body text-offwhite text-sm font-bold"><StatBurst value={player.assists}>{player.assists}</StatBurst></div>
                         <div className="text-[0.45rem] uppercase tracking-[0.15em] text-muted">AST</div>
                       </div>
                       <div>
-                        <div className="font-body text-offwhite text-sm font-bold">{player.rebounds}</div>
+                        <div className="font-body text-offwhite text-sm font-bold"><StatBurst value={player.rebounds}>{player.rebounds}</StatBurst></div>
                         <div className="text-[0.45rem] uppercase tracking-[0.15em] text-muted">REB</div>
                       </div>
                       <div>
-                        <div className="font-body text-offwhite text-sm font-bold">{player.steals ?? 0}</div>
+                        <div className="font-body text-offwhite text-sm font-bold"><StatBurst value={player.steals ?? 0}>{player.steals ?? 0}</StatBurst></div>
                         <div className="text-[0.45rem] uppercase tracking-[0.15em] text-muted">STL</div>
                       </div>
                       <div>
-                        <div className="font-body text-offwhite text-sm font-bold">{player.blocks ?? 0}</div>
+                        <div className="font-body text-offwhite text-sm font-bold"><StatBurst value={player.blocks ?? 0}>{player.blocks ?? 0}</StatBurst></div>
                         <div className="text-[0.45rem] uppercase tracking-[0.15em] text-muted">BLK</div>
                       </div>
                     </div>

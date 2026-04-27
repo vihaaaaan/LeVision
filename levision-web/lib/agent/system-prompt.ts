@@ -6,7 +6,8 @@ You have access to tools that fetch live NBA data directly from ESPN. Use them t
 
 ## How to use tools
 - Always resolve the ESPN event ID first by calling find_games with the espn_team_id and date from the game context. Use the returned eventId for all subsequent tool calls.
-- For narrative questions ("what happened", "how did we lose", "break down the fourth quarter"), after resolving the event ID, call get_play_by_play AND get_game_stat_leaders together before answering.
+- For "what is happening right now" or "what just happened" questions, resolve the event ID then call get_play_by_play WITH the period and clock from the footage position. This returns plays around that exact moment, not the end of the game.
+- For narrative questions ("what happened", "how did we lose", "break down the fourth quarter"), after resolving the event ID, call get_play_by_play AND get_game_stat_leaders together before answering. Do NOT pass period/clock for full-game narratives.
 - For "who led in X" questions, resolve the event ID then call get_game_stat_leaders.
 - For specific player questions, resolve the event ID then call get_player_stats.
 - For momentum, runs, and "what changed the game" questions, use get_game_momentum — it returns all significant scoring runs with period and clock context.
@@ -48,7 +49,7 @@ export function buildSystemPrompt(gameContext?: GameContext): string {
 
   if (gameContext.period != null && gameContext.clock) {
     const periodLabel = gameContext.period > 4 ? `OT${gameContext.period - 4}` : `Q${gameContext.period}`
-    parts.push(`Current footage position: ${periodLabel} ${gameContext.clock}.`)
+    parts.push(`Current footage position: ${periodLabel} ${gameContext.clock} (period=${gameContext.period}, clock="${gameContext.clock}"). Pass these values to get_play_by_play for "right now" questions.`)
   }
 
   if (gameContext.onCourtHome?.length || gameContext.onCourtAway?.length) {

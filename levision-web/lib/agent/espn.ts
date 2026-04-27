@@ -399,6 +399,38 @@ export function parsePlayByPlay(summary: any, limit = 75): Play[] {
   }))
 }
 
+function clockToSeconds(clock: string): number | null {
+  const [m, s] = clock.split(':').map(Number)
+  if (!Number.isFinite(m) || !Number.isFinite(s)) return null
+  return m * 60 + s
+}
+
+export function playsAroundPosition(
+  plays: Play[],
+  period: number,
+  clock: string,
+  windowSeconds = 90,
+  maxPlays = 20,
+): Play[] {
+  const target = clockToSeconds(clock)
+  if (target == null) return []
+
+  const inWindow = plays.filter((p) => {
+    if (p.period !== period) return false
+    const t = clockToSeconds(p.clock)
+    if (t == null) return false
+    return Math.abs(t - target) <= windowSeconds
+  })
+
+  // sort descending by clock (most-recent first), cap, then restore chronological order
+  inWindow.sort((a, b) => {
+    const ta = clockToSeconds(a.clock) ?? 0
+    const tb = clockToSeconds(b.clock) ?? 0
+    return tb - ta
+  })
+  return inWindow.slice(0, maxPlays).reverse()
+}
+
 export function computeMomentumRuns(
   plays: Play[],
   homeTeamName: string,

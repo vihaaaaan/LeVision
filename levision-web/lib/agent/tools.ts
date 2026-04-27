@@ -7,6 +7,7 @@ import {
   findGameByTeamAndDate,
   parseGameSummary,
   parsePlayByPlay,
+  playsAroundPosition,
   computeMomentumRuns,
 } from './espn'
 
@@ -20,7 +21,7 @@ const TEAM_ALIASES: Record<string, string> = {
   mavericks: 'DAL', mavs: 'DAL', dallas: 'DAL', dal: 'DAL',
   nuggets: 'DEN', denver: 'DEN', den: 'DEN',
   pistons: 'DET', detroit: 'DET', det: 'DET',
-  warriors: 'GSW', 'golden state': 'GSW', gsw: 'GSW', dubs: 'GSW',
+  warriors: 'GS', 'golden state': 'GS', gsw: 'GS', gs: 'GS', dubs: 'GS',
   rockets: 'HOU', houston: 'HOU', hou: 'HOU',
   pacers: 'IND', indiana: 'IND', ind: 'IND',
   clippers: 'LAC', 'la clippers': 'LAC', lac: 'LAC', clips: 'LAC',
@@ -29,23 +30,28 @@ const TEAM_ALIASES: Record<string, string> = {
   heat: 'MIA', miami: 'MIA', mia: 'MIA',
   bucks: 'MIL', milwaukee: 'MIL', mil: 'MIL',
   timberwolves: 'MIN', minnesota: 'MIN', min: 'MIN', wolves: 'MIN', twolves: 'MIN',
-  pelicans: 'NOP', 'new orleans': 'NOP', nop: 'NOP', pels: 'NOP',
-  knicks: 'NYK', 'new york': 'NYK', nyk: 'NYK',
+  pelicans: 'NO', 'new orleans': 'NO', nop: 'NO', no: 'NO', pels: 'NO',
+  knicks: 'NY', 'new york': 'NY', nyk: 'NY', ny: 'NY',
   thunder: 'OKC', 'oklahoma city': 'OKC', okc: 'OKC',
   magic: 'ORL', orlando: 'ORL', orl: 'ORL',
   '76ers': 'PHI', sixers: 'PHI', philadelphia: 'PHI', phi: 'PHI', philly: 'PHI',
   suns: 'PHX', phoenix: 'PHX', phx: 'PHX',
   'trail blazers': 'POR', trailblazers: 'POR', blazers: 'POR', portland: 'POR', por: 'POR',
   kings: 'SAC', sacramento: 'SAC', sac: 'SAC',
-  spurs: 'SAS', 'san antonio': 'SAS', sas: 'SAS',
+  spurs: 'SA', 'san antonio': 'SA', sas: 'SA', sa: 'SA',
   raptors: 'TOR', toronto: 'TOR', tor: 'TOR',
-  jazz: 'UTA', utah: 'UTA', uta: 'UTA',
-  wizards: 'WAS', washington: 'WAS', was: 'WAS',
+  jazz: 'UTAH', utah: 'UTAH', uta: 'UTAH',
+  wizards: 'WSH', washington: 'WSH', was: 'WSH', wsh: 'WSH',
 }
 
 function resolveAbbr(team: string): string {
   const lower = team.trim().toLowerCase()
-  return TEAM_ALIASES[lower] ?? team.toUpperCase()
+  if (TEAM_ALIASES[lower]) return TEAM_ALIASES[lower]
+  // Try each word so "Cleveland Cavaliers" → "cavaliers" → CLE
+  for (const word of lower.split(/\s+/)) {
+    if (TEAM_ALIASES[word]) return TEAM_ALIASES[word]
+  }
+  return team.toUpperCase()
 }
 
 function todayEastern(): string {
@@ -204,23 +210,31 @@ export function buildNbaTools() {
 
     get_play_by_play: tool({
       description:
-        'Get play-by-play for a game. Returns up to last_n plays in chronological order. Use for questions about what happened in the game, specific moments, or final minutes.',
+        'Get play-by-play for a game. If period and clock are provided, returns plays within a window around that footage position — use this for "what is happening right now" questions. Without period/clock, returns the final last_n plays of the game.',
       inputSchema: z.object({
         event_id: z.string().describe('ESPN event ID'),
+        period: z.number().int().min(1).max(10).optional().describe('Current period from footage position (1-4, 5+ for OT). Provide this for "right now" questions.'),
+        clock: z.string().optional().describe('Current clock from footage position, format MM:SS e.g. "11:43". Provide this for "right now" questions.'),
         last_n: z
           .number()
           .int()
           .min(1)
           .max(75)
           .optional()
-          .describe('Number of plays to return, from the end of the game (default 50)'),
+          .describe('When NOT using period/clock: number of plays to return from the end of the game (default 25)'),
       }),
-      execute: async ({ event_id, last_n = 50 }: { event_id: string; last_n?: number }) => {
+      execute: async ({ event_id, period, clock, last_n = 25 }: { event_id: string; period?: number; clock?: string; last_n?: number }) => {
         try {
           const summary = await fetchGameSummary(event_id)
-          const plays = parsePlayByPlay(summary, 500)
+          const plays = parsePlayByPlay(summary, 9999)
+
+          if (period != null && clock) {
+            const window = playsAroundPosition(plays, period, clock)
+            return JSON.stringify({ event_id, mode: 'position', period, clock, plays: window })
+          }
+
           const slice = plays.slice(-last_n)
-          return JSON.stringify({ event_id, total_plays: plays.length, plays: slice })
+          return JSON.stringify({ event_id, mode: 'end_of_game', total_plays: plays.length, plays: slice })
         } catch (err) {
           return JSON.stringify({ error: String(err), event_id })
         }

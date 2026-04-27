@@ -3,6 +3,8 @@
 import type { RefObject } from 'react'
 import type { UIMessage, UIMessagePart, UIDataTypes, UITools } from 'ai'
 import { isToolUIPart } from 'ai'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 
 type Props = {
@@ -132,7 +134,21 @@ export default function LeVisionChatPanel({
                   )}
                   {textContent.length > 0 && (
                     <div className={`${bubbleClass} rounded-bl-sm border border-white/8 bg-white/[0.04] text-offwhite`}>
-                      {textContent}
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                          strong: ({ children }) => <strong className="font-semibold text-offwhite">{children}</strong>,
+                          em: ({ children }) => <em className="italic text-offwhite/80">{children}</em>,
+                          ul: ({ children }) => <ul className="mb-2 flex flex-col gap-0.5 pl-3 last:mb-0">{children}</ul>,
+                          ol: ({ children }) => <ol className="mb-2 flex flex-col gap-0.5 pl-3 last:mb-0">{children}</ol>,
+                          li: ({ children }) => <li className="relative pl-2 before:absolute before:left-0 before:content-['·'] before:text-brand">{children}</li>,
+                          code: ({ children }) => <code className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[0.85em] text-brand/90">{children}</code>,
+                          hr: () => <hr className="my-2 border-white/10" />,
+                        }}
+                      >
+                        {textContent}
+                      </ReactMarkdown>
                     </div>
                   )}
                 </div>

@@ -66,6 +66,11 @@ em {
   99%       { top: calc(100% - 18px); opacity: 0; }
 }
 
+@keyframes statFloat {
+  0%   { opacity: 1; transform: translateX(-50%) translateY(0); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-18px); }
+}
+
 /* ── Animation utilities ── */
 
 .animate-fade-up   { animation: fadeUp 0.9s ease both; }
