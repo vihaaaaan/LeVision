@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import PageShell from '@/components/PageShell'
@@ -60,7 +59,7 @@ export default function LoginPage() {
 
           {/* Logo */}
           <div className="flex items-center gap-3 mb-1.5 animate-fade-up delay-50">
-            <Image src="/bron-face.png" alt="LeVision" width={48} height={48} className="object-contain" />
+            <Image src="/bron-face.png" alt="LeVision" width={48} height={48} className="object-contain" style={{ width: 'auto' }} />
             <span className="font-display text-[3.8rem] tracking-[0.06em] leading-none text-offwhite">
               Le<span className="text-brand">Vision</span>
             </span>
@@ -135,19 +134,13 @@ export default function LoginPage() {
                 </a>
               )}
 
-              <div className="flex justify-between mt-[18px]">
+              <div className="flex justify-center mt-[18px]">
                 <a
                   href="#"
                   className="text-[0.73rem] text-muted font-light hover:text-brand transition-colors duration-200"
                 >
                   Forgot your password?
                 </a>
-                <Link
-                  href="/signup"
-                  className="text-[0.73rem] text-muted font-light hover:text-brand transition-colors duration-200"
-                >
-                  Create account
-                </Link>
               </div>
             </form>
           </div>

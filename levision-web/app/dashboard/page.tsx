@@ -55,7 +55,7 @@ export default async function DashboardPage() {
             href="/dashboard"
             className="flex items-center gap-2.5 text-offwhite hover:opacity-90 transition-opacity cursor-pointer"
           >
-            <Image src="/bron-face.png" alt="LeVision" width={32} height={32} className="object-contain" />
+            <Image src="/bron-face.png" alt="LeVision" width={32} height={32} className="object-contain" style={{ width: 'auto' }} />
             <span className="font-display text-[1.7rem] tracking-[0.06em] leading-none">
               Le<span className="text-brand">Vision</span>
             </span>

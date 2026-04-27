@@ -45,8 +45,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // Redirect anyone hitting /signup to /login
+  if (pathname === '/signup') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    return NextResponse.redirect(url)
+  }
+
   // Redirect authenticated users away from auth pages
-  if ((user || hasDevBypass) && (pathname === '/login' || pathname === '/signup')) {
+  if ((user || hasDevBypass) && pathname === '/login') {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
