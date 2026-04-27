@@ -96,12 +96,28 @@ def _post_webhook(webhook_url: str, secret: str, payload: dict) -> None:
 
 def _r2_client():
     import boto3
+    from botocore.config import Config
     return boto3.client(
         "s3",
         endpoint_url=f"https://{os.environ['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com",
         aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
         region_name="auto",
+        config=Config(
+            retries={"max_attempts": 5, "mode": "adaptive"},
+            read_timeout=300,
+            connect_timeout=30,
+        ),
+    )
+
+
+def _r2_transfer_config():
+    from boto3.s3.transfer import TransferConfig
+    return TransferConfig(
+        multipart_threshold=64 * 1024 * 1024,   # 64 MB
+        multipart_chunksize=64 * 1024 * 1024,
+        max_concurrency=8,
+        use_threads=True,
     )
 
 
@@ -172,7 +188,7 @@ def extract_frames(r2_key: str) -> list[str]:
     local_video = "/tmp/video.mp4"
     print(f"Downloading {r2_key} from R2 …")
     s3 = _r2_client()
-    s3.download_file(R2_BUCKET, r2_key, local_video)
+    s3.download_file(R2_BUCKET, r2_key, local_video, Config=_r2_transfer_config())
     print("Download complete.")
 
     print("Extracting 1 FPS frames with ffmpeg …")

@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/server'
 export const runtime = 'nodejs'
 
 const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024 * 1024
-const PRESIGN_EXPIRES_IN = 600 // 10 minutes
+const PRESIGN_EXPIRES_IN = 3600 // 1 hour
 
 const REQUIRED_ENV_VARS = [
   'R2_ACCOUNT_ID',
