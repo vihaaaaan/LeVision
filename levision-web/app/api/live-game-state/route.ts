@@ -127,7 +127,6 @@ function normalizeTeam(
     .map((pid) => normalizePlayer(pid, rawStats[pid], onCourtSet, lookup))
     .sort((a, b) => {
       if (a.onCourt !== b.onCourt) return a.onCourt ? -1 : 1
-      if (b.points !== a.points) return b.points - a.points
       return a.name.localeCompare(b.name)
     })
 

@@ -173,11 +173,11 @@ export default function FootageViewTab({ reviewClip = null }: Props) {
         className={
           isFan
             ? 'grid min-h-[min(60vh,520px)] gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]'
-            : 'grid min-h-[min(60vh,520px)] gap-5 xl:grid-cols-[320px_minmax(0,1fr)_320px]'
+            : 'grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)_320px]'
         }
       >
         {!isFan && (
-          <div className="min-h-[min(60vh,520px)]">
+          <div className="h-[min(60vh,520px)]">
             <TeamStatsPanel
               team="away"
               game={active?.game}
@@ -188,8 +188,8 @@ export default function FootageViewTab({ reviewClip = null }: Props) {
           </div>
         )}
 
-        <div className="flex min-h-[min(60vh,520px)] flex-col">
-          <div className="flex-1 border border-[rgba(200,136,58,0.15)] rounded-sm bg-black overflow-hidden flex flex-col">
+        <div className={isFan ? 'flex min-h-[min(60vh,520px)] flex-col' : 'flex flex-col'}>
+          <div className={isFan ? 'flex-1 border border-[rgba(200,136,58,0.15)] rounded-sm bg-black overflow-hidden flex flex-col' : 'border border-[rgba(200,136,58,0.15)] rounded-sm bg-black overflow-hidden flex flex-col'}>
             <div className="aspect-video w-full max-h-[min(56vh,640px)] bg-black flex items-center justify-center relative">
               {loading && (
                 <p className="text-[0.8rem] text-muted/60 font-light">Loading…</p>
@@ -332,7 +332,7 @@ export default function FootageViewTab({ reviewClip = null }: Props) {
             </div>
           </div>
         ) : (
-          <div className="min-h-[min(60vh,520px)]">
+          <div className="h-[min(60vh,520px)]">
             <TeamStatsPanel
               team="home"
               game={active?.game}

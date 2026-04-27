@@ -135,7 +135,7 @@ export default function TeamStatsPanel({
   const quarterLabel = formatQuarter(livePeriod)
 
   return (
-    <aside className="relative flex h-full min-h-[min(60vh,520px)] flex-col overflow-hidden rounded-sm border border-[rgba(200,136,58,0.24)] bg-[rgba(9,11,14,0.94)] shadow-[0_18px_55px_rgba(0,0,0,0.32)] backdrop-blur-xl">
+    <aside className="relative flex h-full flex-col overflow-hidden rounded-sm border border-[rgba(200,136,58,0.24)] bg-[rgba(9,11,14,0.94)] shadow-[0_18px_55px_rgba(0,0,0,0.32)] backdrop-blur-xl">
       <div className="pointer-events-none absolute inset-0 opacity-90">
         <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(200,136,58,0.95),transparent)]" />
         <div className="absolute -left-10 top-8 h-24 w-24 rounded-full bg-brand/12 blur-3xl" />
