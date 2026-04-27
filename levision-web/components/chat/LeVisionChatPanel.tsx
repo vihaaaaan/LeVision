@@ -1,14 +1,15 @@
 'use client'
 
 import type { RefObject } from 'react'
-import type { ChatMessage } from '@/lib/chat/types'
+import type { UIMessage, UIMessagePart, UIDataTypes, UITools } from 'ai'
+import { isToolUIPart } from 'ai'
+
 
 type Props = {
   endRef: RefObject<HTMLDivElement | null>
-  error: string | null
   input: string
   isSending: boolean
-  messages: ChatMessage[]
+  messages: UIMessage[]
   onClose?: () => void
   onInputChange: (value: string) => void
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
@@ -16,9 +17,14 @@ type Props = {
   variant?: 'drawer' | 'inline'
 }
 
+function getToolLabel(part: UIMessagePart<UIDataTypes, UITools>): string | null {
+  if (!isToolUIPart(part)) return null
+  const name = part.type.startsWith('tool-') ? part.type.slice(5) : part.type
+  return name.replace(/_/g, ' ')
+}
+
 export default function LeVisionChatPanel({
   endRef,
-  error,
   input,
   isSending,
   messages,
@@ -85,19 +91,50 @@ export default function LeVisionChatPanel({
 
         <div className={`relative min-h-0 flex-1 overflow-y-auto chat-scroll ${isInline ? 'px-3 py-3' : 'px-4 py-4'}`}>
           <div className={`flex flex-col ${isInline ? 'gap-2.5' : 'gap-3'}`}>
-            {messages.map((message, index) => {
+            {messages.map((message) => {
               const isUser = message.role === 'user'
 
+              if (isUser) {
+                const textPart = message.parts.find((p) => p.type === 'text')
+                const text = textPart?.type === 'text' ? textPart.text : ''
+                return (
+                  <div
+                    key={message.id}
+                    className={`${bubbleClass} ml-auto rounded-br-sm bg-brand text-pitch`}
+                  >
+                    {text}
+                  </div>
+                )
+              }
+
+              // assistant message — collect unique tool names + final text
+              const toolsUsed = [...new Set(
+                message.parts.map(getToolLabel).filter((l): l is string => l !== null)
+              )]
+              const textContent = message.parts
+                .filter((p) => p.type === 'text')
+                .map((p) => (p as { type: 'text'; text: string }).text)
+                .join('')
+
               return (
-                <div
-                  key={`${message.role}-${index}-${message.content.slice(0, 16)}`}
-                  className={`${bubbleClass} ${
-                    isUser
-                      ? 'ml-auto rounded-br-sm bg-brand text-pitch'
-                      : 'rounded-bl-sm border border-white/8 bg-white/[0.04] text-offwhite'
-                  }`}
-                >
-                  {message.content}
+                <div key={message.id} className="flex flex-col gap-1.5">
+                  {toolsUsed.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {toolsUsed.map((name) => (
+                        <span
+                          key={name}
+                          className="rounded border border-white/8 bg-white/[0.03] px-2.5 py-1 font-mono text-[0.68rem] text-muted"
+                        >
+                          {name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {textContent.length > 0 && (
+                    <div className={`${bubbleClass} rounded-bl-sm border border-white/8 bg-white/[0.04] text-offwhite`}>
+                      {textContent}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -145,7 +182,6 @@ export default function LeVisionChatPanel({
             <p className={`${isInline ? 'text-[0.58rem]' : 'text-[0.65rem]'} uppercase tracking-[0.18em] text-muted`}>
               Endpoint: {process.env.NEXT_PUBLIC_LEVISION_CHAT_LABEL ?? 'scaffold'}
             </p>
-            {error && <p className={`${isInline ? 'text-[0.66rem]' : 'text-[0.72rem]'} text-accent`}>{error}</p>}
           </div>
         </form>
       </div>

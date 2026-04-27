@@ -1,26 +1,60 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useChat } from '@ai-sdk/react'
+import { DefaultChatTransport } from 'ai'
 import { useChatDock } from '@/components/chat/ChatDockProvider'
 import LeVisionChatPanel from '@/components/chat/LeVisionChatPanel'
-import { useLeVisionChat } from '@/hooks/useLeVisionChat'
 
 export default function FloatingChat() {
-  const { floatingHidden } = useChatDock()
+  const { floatingHidden, activeGameContext } = useChatDock()
   const [isOpen, setIsOpen] = useState(false)
-  const { endRef, error, input, isSending, messages, setInput, submitMessage } =
-    useLeVisionChat()
+  const endRef = useRef<HTMLDivElement | null>(null)
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  const gameContextRef = useRef(activeGameContext)
+  gameContextRef.current = activeGameContext
+
+  const { messages, sendMessage, status, error } = useChat({
+    transport: new DefaultChatTransport({
+      api: '/api/chat',
+      body: () => ({ gameContext: gameContextRef.current ?? undefined }),
+    }),
+    onError: (err) => console.error('[LeVision chat] error:', err),
+    onFinish: (msg) => console.log('[LeVision chat] finished:', msg),
+  })
+
+  useEffect(() => {
+    console.log('[LeVision chat] status:', status)
+  }, [status])
+
+  useEffect(() => {
+    if (messages.length === 0) return
+    const last = messages[messages.length - 1]
+    console.log('[LeVision chat] last message parts:', last.parts)
+  }, [messages])
+
+  useEffect(() => {
+    console.log('[LeVision chat] gameContext:', gameContextRef.current)
+  }, [activeGameContext])
+
+  const [input, setInput] = useState('')
+  const isSending = status === 'streaming' || status === 'submitted'
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    await submitMessage()
+    if (!input.trim()) return
+    sendMessage({ text: input })
+    setInput('')
+    setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
   }
 
   function handleComposerKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-
-      void submitMessage()
+      if (!input.trim()) return
+      sendMessage({ text: input })
+      setInput('')
+      setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
     }
   }
 
@@ -36,7 +70,7 @@ export default function FloatingChat() {
         aria-expanded={isOpen}
         aria-controls="levision-chat-panel"
         className={`pointer-events-auto group absolute right-0 top-1/2 flex -translate-y-1/2 translate-x-[1px] items-center gap-3 rounded-l-[22px] border border-r-0 border-[rgba(200,136,58,0.32)] bg-[linear-gradient(180deg,rgba(19,22,27,0.96),rgba(9,11,14,0.96))] px-4 py-5 text-offwhite shadow-[0_18px_50px_rgba(0,0,0,0.35)] backdrop-blur-md transition-[right,background-color] duration-300 cursor-pointer ${
-          isOpen ? 'right-[min(24rem,calc(100vw-2rem))]' : 'right-0'
+          isOpen ? 'right-[min(38rem,calc(100vw-2rem))]' : 'right-0'
         }`}
       >
         <span className="absolute inset-y-3 left-0 w-px bg-[linear-gradient(180deg,transparent,rgba(200,136,58,0.95),transparent)]" />
@@ -51,13 +85,12 @@ export default function FloatingChat() {
 
       <section
         aria-hidden={!isOpen}
-        className={`relative h-full w-[min(24rem,calc(100vw-2rem))] overflow-hidden border-l border-[rgba(200,136,58,0.24)] bg-[rgba(9,11,14,0.94)] shadow-[-24px_0_90px_rgba(0,0,0,0.45)] backdrop-blur-xl transition-transform duration-300 ${
+        className={`relative h-full w-[min(38rem,calc(100vw-2rem))] overflow-hidden border-l border-[rgba(200,136,58,0.24)] bg-[rgba(9,11,14,0.94)] shadow-[-24px_0_90px_rgba(0,0,0,0.45)] backdrop-blur-xl transition-transform duration-300 ${
           isOpen ? 'translate-x-0 pointer-events-auto' : 'translate-x-full pointer-events-none'
         }`}
       >
         <LeVisionChatPanel
           endRef={endRef}
-          error={error}
           input={input}
           isSending={isSending}
           messages={messages}

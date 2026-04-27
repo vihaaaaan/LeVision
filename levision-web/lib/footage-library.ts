@@ -12,6 +12,7 @@ export type FootageClip = {
   homeTeamId?: string
   awayTeamId?: string
   gameDate?: string | null
+  espnGameId?: string | null
 }
 
 type FootageRow = {
@@ -48,6 +49,7 @@ export async function fetchFootageLibraryClips(): Promise<FootageClip[]> {
       homeTeamId: row.home_team_id ?? undefined,
       awayTeamId: row.away_team_id ?? undefined,
       gameDate: row.game_date,
+      espnGameId: row.espn_game_id,
     }))
 }
 

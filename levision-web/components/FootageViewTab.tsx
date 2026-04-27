@@ -103,7 +103,7 @@ type Props = {
 export default function FootageViewTab({ reviewClip = null }: Props) {
   const { role } = useUserRole()
   const isFan = role === 'fan'
-  const { setFloatingHidden } = useChatDock()
+  const { setFloatingHidden, setActiveGameContext } = useChatDock()
   const { clips, loading, error } = useFootageLibrary()
 
   const mergedClips = useMemo(() => {
@@ -134,11 +134,33 @@ export default function FootageViewTab({ reviewClip = null }: Props) {
   })
 
   useEffect(() => {
-    const hideFloating = false
-    setFloatingHidden(hideFloating)
+    setFloatingHidden(!active?.playbackUrl)
+    return () => setFloatingHidden(true)
+  }, [setFloatingHidden, active?.playbackUrl])
 
-    return () => setFloatingHidden(false)
-  }, [setFloatingHidden])
+  useEffect(() => {
+    if (!active?.playbackUrl) {
+      setActiveGameContext(null)
+      return
+    }
+    setActiveGameContext({
+      homeTeamId: active.homeTeamId ?? undefined,
+      awayTeamId: active.awayTeamId ?? undefined,
+      homeTeamName: liveState?.homeTeam?.teamName ?? active.game?.homeTeam ?? undefined,
+      awayTeamName: liveState?.awayTeam?.teamName ?? active.game?.awayTeam ?? undefined,
+      gameDate: active.gameDate ?? undefined,
+      espnEventId: active.espnGameId ?? active.game?.id ?? undefined,
+      title: active.title ?? undefined,
+      clock: liveState?.clock,
+      period: liveState?.period,
+      homeScore: active.game?.homeScore ?? undefined,
+      awayScore: active.game?.awayScore ?? undefined,
+      onCourtHome: liveState?.homeTeam?.onCourt ?? undefined,
+      onCourtAway: liveState?.awayTeam?.onCourt ?? undefined,
+      recentEvents: liveState?.recentEvents?.slice(-5) ?? undefined,
+    })
+    return () => setActiveGameContext(null)
+  }, [active, liveState, setActiveGameContext])
 
   const quarterLabel = formatQuarter(liveState?.period)
   const clockLabel = liveState?.clock ?? '--:--'
