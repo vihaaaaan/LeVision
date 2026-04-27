@@ -153,7 +153,7 @@ export default function FootageViewTab({ reviewClip = null }: Props) {
     const video = videoRef.current
     if (!video || targetSecond == null) return
 
-    const leadInSecond = Math.max(0, targetSecond - 3)
+    const leadInSecond = Math.max(0, targetSecond - 7)
     video.currentTime = leadInSecond
     setVideoSecond(leadInSecond)
   }
