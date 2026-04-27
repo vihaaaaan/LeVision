@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
-const MAX_UPLOAD_SIZE_BYTES = 300 * 1024 * 1024
+const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024 * 1024
 const PRESIGN_EXPIRES_IN = 600 // 10 minutes
 
 const REQUIRED_ENV_VARS = [
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     }
 
     if (body.fileSize > MAX_UPLOAD_SIZE_BYTES) {
-      return NextResponse.json({ error: 'File too big (max 300MB).' }, { status: 413 })
+      return NextResponse.json({ error: 'File too big (max 5GB).' }, { status: 413 })
     }
 
     if (!body.contentType.startsWith('video/')) {
