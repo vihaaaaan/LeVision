@@ -49,6 +49,7 @@ type RawSnapshot = {
   period?: number
   home_team?: RawTeamState
   visitor_team?: RawTeamState
+  recent_events?: string[]
 }
 
 function buildPlayerLookup(entries: Array<Record<string, unknown>>): PlayerLookup {
@@ -130,6 +131,7 @@ function buildSnapshots(
       period: Number(entry.period ?? 0),
       homeTeam: normalizeTeam('home', entry.home_team, lookup),
       awayTeam: normalizeTeam('away', entry.visitor_team, lookup),
+      recentEvents: entry.recent_events ?? [],
     }
   }
   return snapshots

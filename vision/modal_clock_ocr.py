@@ -54,6 +54,9 @@ image = (
             "fastapi[standard]",
         ]
     )
+    .add_local_file("data/nba/pbp_raw.json", "/nba_data/pbp_raw.json")
+    .add_local_file("data/nba/player_boxscore.json", "/nba_data/player_boxscore.json")
+    .add_local_file("data/nba/game_meta.json", "/nba_data/game_meta.json")
 )
 
 app = modal.App("basketball-clock-ocr", image=image)
@@ -103,26 +106,49 @@ def _r2_client():
 
 
 # ---------------------------------------------------------------------------
-# ESPN → NBA team ID resolution
+# ESPN team ID → (NBA API team ID, abbreviation)
+# Static mapping — 30 teams, IDs never change, no network call needed.
 # ---------------------------------------------------------------------------
+
+_ESPN_TO_NBA: dict[str, tuple[int, str]] = {
+    "1":  (1610612737, "ATL"),
+    "2":  (1610612738, "BOS"),
+    "3":  (1610612740, "NOP"),
+    "4":  (1610612741, "CHI"),
+    "5":  (1610612739, "CLE"),
+    "6":  (1610612742, "DAL"),
+    "7":  (1610612743, "DEN"),
+    "8":  (1610612765, "DET"),
+    "9":  (1610612744, "GSW"),
+    "10": (1610612745, "HOU"),
+    "11": (1610612754, "IND"),
+    "12": (1610612746, "LAC"),
+    "13": (1610612747, "LAL"),
+    "14": (1610612748, "MIA"),
+    "15": (1610612749, "MIL"),
+    "16": (1610612750, "MIN"),
+    "17": (1610612751, "BKN"),
+    "18": (1610612752, "NYK"),
+    "19": (1610612753, "ORL"),
+    "20": (1610612755, "PHI"),
+    "21": (1610612756, "PHX"),
+    "22": (1610612757, "POR"),
+    "23": (1610612758, "SAC"),
+    "24": (1610612759, "SAS"),
+    "25": (1610612760, "OKC"),
+    "26": (1610612762, "UTA"),
+    "27": (1610612764, "WAS"),
+    "28": (1610612761, "TOR"),
+    "29": (1610612763, "MEM"),
+    "30": (1610612766, "CHA"),
+}
 
 
 def _espn_to_nba_team_id(espn_team_id: str) -> tuple[int, str]:
-    """Return (nba_api_team_id, abbreviation) by querying ESPN then nba_api."""
-    import requests as req
-    from nba_api.stats.static import teams as nba_teams
-
-    resp = req.get(
-        f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/{espn_team_id}",
-        timeout=10,
-    )
-    resp.raise_for_status()
-    abbrev = resp.json()["team"]["abbreviation"]
-
-    matches = nba_teams.find_teams_by_abbreviation(abbrev)
-    if not matches:
-        raise ValueError(f"No NBA team found for abbreviation '{abbrev}' (ESPN ID {espn_team_id})")
-    return matches[0]["id"], abbrev
+    result = _ESPN_TO_NBA.get(str(espn_team_id))
+    if not result:
+        raise ValueError(f"Unknown ESPN team ID: {espn_team_id}")
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -304,32 +330,73 @@ def smooth_timeline(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-def fetch_play_by_play(home_team_id: str, away_team_id: str, game_date: str) -> dict:
-    """Fetch game metadata, play-by-play, and box scores from the NBA API.
+_NBA_HEADERS = {
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Connection": "keep-alive",
+    "Host": "stats.nba.com",
+    "Origin": "https://www.nba.com",
+    "Referer": "https://www.nba.com/",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "x-nba-stats-origin": "stats",
+    "x-nba-stats-token": "true",
+}
 
-    Resolves ESPN team IDs → NBA team IDs, identifies the exact game on the
-    given date, and returns only that game's data.
-    """
+
+def _nba_get(fn: Any, *args: Any, retries: int = 3, **kwargs: Any) -> Any:
+    """Call an nba_api endpoint with browser headers and retries."""
+    import time
+    kwargs.setdefault("timeout", 60)
+    kwargs.setdefault("headers", _NBA_HEADERS)
+    for attempt in range(1, retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            if attempt == retries:
+                raise
+            wait = attempt * 3
+            print(f"[WARN] nba_api attempt {attempt}/{retries} failed ({exc}); retrying in {wait}s…")
+            time.sleep(wait)
+
+
+def fetch_play_by_play(home_team_id: str, away_team_id: str, game_date: str) -> dict:
+    """Fetch PBP + boxscore for the game, with R2 caching to avoid repeated NBA API hits."""
     from datetime import datetime, timezone
     from nba_api.stats.endpoints import LeagueGameFinder, PlayByPlayV3, BoxScoreTraditionalV3
 
-    # Resolve ESPN IDs to NBA API team IDs + abbreviations
     home_nba_id, home_abbrev = _espn_to_nba_team_id(home_team_id)
     away_nba_id, away_abbrev = _espn_to_nba_team_id(away_team_id)
     print(f"Resolved teams: {home_abbrev} (NBA {home_nba_id}) vs {away_abbrev} (NBA {away_nba_id})")
 
-    # Parse date — ESPN sends UTC ISO strings
     dt = datetime.fromisoformat(game_date.replace("Z", "+00:00"))
-    date_str = dt.astimezone(timezone.utc).strftime("%m/%d/%Y")
+    date_str = dt.astimezone(timezone.utc).strftime("%Y-%m-%d")
 
-    game_finder = LeagueGameFinder(date_from_nullable=date_str, date_to_nullable=date_str)
-    games_df = game_finder.get_data_frames()[0]
+    # --- Check bundled data files first (baked into the image at deploy time) ---
+    bundled_pbp  = Path("/nba_data/pbp_raw.json")
+    bundled_box  = Path("/nba_data/player_boxscore.json")
+    bundled_meta = Path("/nba_data/game_meta.json")
+    if bundled_pbp.exists() and bundled_box.exists():
+        meta = json.loads(bundled_meta.read_text()) if bundled_meta.exists() else {}
+        result = {
+            "game_meta":       meta,
+            "pbp_raw":         json.loads(bundled_pbp.read_text()),
+            "player_boxscore": json.loads(bundled_box.read_text()),
+            "home_nba_id":     home_nba_id,
+            "away_nba_id":     away_nba_id,
+        }
+        print("Using bundled PBP data (no NBA API call needed)")
+        return result
+
+    # --- Fetch from NBA API ---
+    date_api = datetime.fromisoformat(game_date.replace("Z", "+00:00")).strftime("%m/%d/%Y")
+
+    games_df = _nba_get(LeagueGameFinder,
+                        date_from_nullable=date_api,
+                        date_to_nullable=date_api).get_data_frames()[0]
 
     if games_df.empty:
-        raise ValueError(f"No games found for date {date_str}")
+        raise ValueError(f"No games found for date {date_api}")
 
-    # Find the specific game matching our two teams via the MATCHUP column
-    # e.g. "LAL vs. GSW" or "GSW @ LAL"
     matching_game_id: str | None = None
     for _, row in games_df.iterrows():
         matchup = str(row.get("MATCHUP", "")).upper()
@@ -338,22 +405,16 @@ def fetch_play_by_play(home_team_id: str, away_team_id: str, game_date: str) -> 
             break
 
     if not matching_game_id:
-        # Fallback: use the first game on the date (shouldn't happen with valid ESPN IDs)
         matching_game_id = str(games_df["GAME_ID"].iloc[0])
-        print(f"[WARN] Could not find exact game for {home_abbrev} vs {away_abbrev} on {date_str}; using {matching_game_id}")
+        print(f"[WARN] Could not match {home_abbrev} vs {away_abbrev}; using {matching_game_id}")
     else:
         print(f"Matched game_id: {matching_game_id}")
 
-    # Fetch PBP and boxscore for just this game
     pbp_raw: list[dict] = []
     player_boxscore: list[dict] = []
-
     try:
-        pbp = PlayByPlayV3(game_id=matching_game_id)
-        pbp_raw = pbp.get_data_frames()[0].to_dict(orient="records")
-
-        box = BoxScoreTraditionalV3(game_id=matching_game_id)
-        player_boxscore = box.get_data_frames()[0].to_dict(orient="records")
+        pbp_raw = _nba_get(PlayByPlayV3, game_id=matching_game_id).get_data_frames()[0].to_dict(orient="records")
+        player_boxscore = _nba_get(BoxScoreTraditionalV3, game_id=matching_game_id).get_data_frames()[0].to_dict(orient="records")
     except Exception as e:
         print(f"[WARN] PBP/boxscore fetch failed for game {matching_game_id}: {e}")
 

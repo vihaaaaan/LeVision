@@ -95,6 +95,7 @@ export type LiveGameState = {
   period: number
   homeTeam: LiveTeamState
   awayTeam: LiveTeamState
+  recentEvents: string[]
 }
 
 export type LiveGameTimeline = {

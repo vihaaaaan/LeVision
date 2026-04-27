@@ -169,6 +169,20 @@ export default function FootageViewTab({ reviewClip = null }: Props) {
                     Loading live stats…
                   </p>
                 )}
+                {liveEnabled && liveState && liveState.recentEvents.length > 0 && (
+                  <div className="mt-3 flex flex-col gap-1">
+                    {liveState.recentEvents.slice().reverse().map((evt, i) => (
+                      <p
+                        key={i}
+                        className={`text-[0.64rem] font-light tracking-wide truncate transition-opacity duration-300 ${
+                          i === 0 ? 'text-offwhite' : 'text-muted/50'
+                        }`}
+                      >
+                        {evt}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
